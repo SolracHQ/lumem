@@ -6,7 +6,7 @@ build:
 
 run *args:
     zig build
-    sudo ./zig-out/bin/memscript {{args}}
+    sudo ./zig-out/bin/lumem {{args}}
 
 test:
     zig build test

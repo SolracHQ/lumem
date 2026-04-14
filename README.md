@@ -1,6 +1,6 @@
-# MemScript
+# Lumem
 
-MemScript is a scriptable process memory inspector and editor, driven by Lua.
+Lumem is a scriptable process memory inspector and editor, driven by Lua.
 A hobby project to learn Zig and Lua, and mess with game memory along the way.
 
 If you just want to see what it can do, skip to [Usage](#usage).
@@ -16,8 +16,8 @@ For the scripting layer I ruled out a UI early, partly because I wanted somethin
 
 ## Status
 
-- `memscript <script.lua>` boots Lua, registers globals, loads the script, and runs it.
-- `memscript` with no arguments starts an interactive REPL with history and tab completion.
+- `lumem <script.lua>` boots Lua, registers globals, loads the script, and runs it.
+- `lumem` with no arguments starts an interactive REPL with history and tab completion.
 - `proc.list()` enumerates live processes with optional name filtering.
 - `process:scan()` scans all readable memory regions and returns matched entries.
 - `entries:rescan()` narrows a previous result with a new condition.
@@ -41,17 +41,17 @@ In the REPL, top-level locals do not persist between lines. Use bare assignment 
 
 ```lua
 -- this works across lines
-p = proc.list({name = "target"})[1]
+p = lumem.list({name = "target"})[1]
 
 -- this does not
-local p = proc.list({name = "target"})[1]
+local p = lumem.list({name = "target"})[1]
 ```
 
 ## API
 
 ```lua
 -- list processes, optionally filtered by name substring
-local p = proc.list({name = "target"})[1]
+local p = lumem.list({name = "target"})[1]
 
 -- scan the whole process
 local entries = p:scan({type = "f32", eq = 8.3})

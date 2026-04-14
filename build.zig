@@ -4,29 +4,31 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const mod = b.addModule("memscript", .{
+    const mod = b.addModule("lumem", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
     });
-    mod.linkSystemLibrary("lua", .{});
     mod.link_libc = true;
 
-    mod.addCSourceFile(.{ .file = b.path("vendor/linenoise/linenoise.c"), .flags = &.{} });
-    mod.addIncludePath(b.path("vendor/linenoise"));
+    const zua = b.dependency("zua", .{ .target = target, .optimize = optimize });
+    mod.addImport("zua", zua.module("zua"));
 
     const exe = b.addExecutable(.{
-        .name = "memscript",
+        .name = "lumem",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
-                .{ .name = "memscript", .module = mod },
+                .{ .name = "lumem", .module = mod },
             },
         }),
     });
-    exe.root_module.linkSystemLibrary("lua", .{});
     exe.root_module.link_libc = true;
+
+    exe.root_module.addImport("zua", zua.module("zua"));
+
+    exe.root_module.addIncludePath(b.path("vendor/linenoise"));
 
     b.installArtifact(exe);
 
