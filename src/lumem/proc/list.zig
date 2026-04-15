@@ -25,7 +25,7 @@ pub fn init(ctx: *zua.Context, elements: []Process) !List {
         .processes = std.ArrayList(zua.Object(Process)).empty,
     };
     for (elements) |proc| {
-        try list.processes.append(ctx.state.allocator, zua.Object(Process).create(ctx.state, proc).takeOwnership());
+        try list.processes.append(ctx.heap(), zua.Object(Process).create(ctx.state, proc).takeOwnership());
     }
     return list;
 }
@@ -51,7 +51,7 @@ fn len(self: *List, _: *List) usize {
 /// Formats the list for Lua `tostring()`.
 fn display(ctx: *zua.Context, self: *List) ![]const u8 {
     const fmt = "ProcList({d} processes)";
-    return std.fmt.allocPrint(ctx.allocator(), fmt, .{self.processes.items.len}) catch ctx.failTyped([]const u8, "Out of memory");
+    return std.fmt.allocPrint(ctx.arena(), fmt, .{self.processes.items.len}) catch ctx.failTyped([]const u8, "Out of memory");
 }
 
 /// Frees the `ProcList` and its owned process objects when Lua garbage-collects it.
@@ -59,5 +59,5 @@ fn deinit(ctx: *zua.Context, self: *List) void {
     for (self.processes.items) |proc| {
         proc.release();
     }
-    self.processes.deinit(ctx.state.allocator);
+    self.processes.deinit(ctx.heap());
 }

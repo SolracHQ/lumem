@@ -8,7 +8,6 @@ pub const Scanner = @This();
 const std = @import("std");
 const zua = @import("zua");
 const Region = @import("region.zig");
-const Filter = @import("filter.zig");
 
 const proc_maps_limit = 1024 * 1024;
 
@@ -31,8 +30,8 @@ pub fn scan(ctx: *zua.Context, pid: std.posix.pid_t, filter: ?Region.Permissions
 
     var regions = std.ArrayList(Region).empty;
     errdefer {
-        for (regions.items) |region| ctx.state.allocator.free(region.pathname);
-        regions.deinit(ctx.state.allocator);
+        for (regions.items) |region| ctx.arena().free(region.pathname);
+        regions.deinit(ctx.arena());
     }
 
     var lines = std.mem.splitScalar(u8, maps_data, '\n');
@@ -40,19 +39,19 @@ pub fn scan(ctx: *zua.Context, pid: std.posix.pid_t, filter: ?Region.Permissions
         const trimmed = std.mem.trim(u8, line, " \t\r");
         if (trimmed.len == 0) continue;
 
-        const region = try parseLine(ctx.state.allocator, trimmed);
+        const region = try parseLine(ctx.heap(), trimmed, pid);
         if (filter == null or region.perms.hasAll(filter.?)) {
-            try regions.append(ctx.state.allocator, region);
+            try regions.append(ctx.arena(), region);
         } else {
-            ctx.state.allocator.free(region.pathname);
+            ctx.heap().free(region.pathname);
         }
     }
 
-    return regions.toOwnedSlice(ctx.state.allocator);
+    return regions.items;
 }
 
 /// Parses a single `/proc/<pid>/maps` line into a `Region` value.
-fn parseLine(allocator: std.mem.Allocator, line: []const u8) !Region {
+fn parseLine(allocator: std.mem.Allocator, line: []const u8, pid: std.posix.pid_t) !Region {
     var cursor: usize = 0;
     const address_field = nextField(line, &cursor) orelse return error.InvalidLine;
     const perms_field = nextField(line, &cursor) orelse return error.InvalidLine;
@@ -73,6 +72,7 @@ fn parseLine(allocator: std.mem.Allocator, line: []const u8) !Region {
     const pathname = try allocator.dupe(u8, pathname_field);
 
     return Region{
+        .pid = pid,
         .start = start,
         .end = end,
         .offset = offset,
@@ -87,18 +87,18 @@ fn parsePermissions(field: []const u8) !Region.Permissions {
     if (field.len != 4) return error.InvalidPermissions;
     var perms: Region.Permissions = .{ .bits = 0 };
     if (field[0] == 'r') {
-        perms.bits |= @intFromEnum(Filter.Permission.read);
+        perms.bits |= @intFromEnum(Region.Permissions.Permission.read);
     } else if (field[0] != '-') return error.InvalidPermissions;
     if (field[1] == 'w') {
-        perms.bits |= @intFromEnum(Filter.Permission.write);
+        perms.bits |= @intFromEnum(Region.Permissions.Permission.write);
     } else if (field[1] != '-') return error.InvalidPermissions;
     if (field[2] == 'x') {
-        perms.bits |= @intFromEnum(Filter.Permission.execute);
+        perms.bits |= @intFromEnum(Region.Permissions.Permission.execute);
     } else if (field[2] != '-') return error.InvalidPermissions;
     if (field[3] == 's') {
-        perms.bits |= @intFromEnum(Filter.Permission.shared);
+        perms.bits |= @intFromEnum(Region.Permissions.Permission.shared);
     } else if (field[3] == 'p') {
-        perms.bits |= @intFromEnum(Filter.Permission.private);
+        perms.bits |= @intFromEnum(Region.Permissions.Permission.private);
     } else return error.InvalidPermissions;
     return perms;
 }

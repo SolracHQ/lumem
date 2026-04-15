@@ -48,8 +48,8 @@ cmdLine: []const u8,
 
 /// Frees the process metadata buffer when Lua garbage-collects the object.
 pub fn cleanup(ctx: *zua.Context, self: *Process) void {
-    ctx.state.allocator.free(self.name);
-    ctx.state.allocator.free(self.cmdLine);
+    ctx.heap().free(self.name);
+    ctx.heap().free(self.cmdLine);
 }
 
 /// Returns the process parent PID, or `nil` when unavailable.
@@ -80,5 +80,5 @@ pub fn regions(ctx: *zua.Context, self: *const Process, filter: ?Region.Permissi
 fn display(ctx: *zua.Context, self: *Process) ![]const u8 {
     const fmt = "Process {{ pid: {x}, name: {s} }}";
     const args = .{ self.pid, self.name };
-    return std.fmt.allocPrint(ctx.allocator(), fmt, args) catch ctx.failTyped([]const u8, "Out of memory");
+    return std.fmt.allocPrint(ctx.arena(), fmt, args) catch ctx.failTyped([]const u8, "Out of memory");
 }

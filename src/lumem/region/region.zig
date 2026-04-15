@@ -1,15 +1,18 @@
 //! Memory region metadata parsed from `/proc/<pid>/maps`.
-//! Memory region metadata parsed from `/proc/<pid>/maps`.
 //!
 //! Region objects are exposed to Lua with getters for address, size,
 //! permissions, and mapped pathname.
-const std = @import("std");
-const zua = @import("zua");
-const FilterModule = @import("filter.zig");
-
 pub const Region = @This();
 
-pub const Permissions = FilterModule.Permissions;
+const std = @import("std");
+const zua = @import("zua");
+
+const DataType = @import("../mem/data_type.zig").DataType;
+const Selector = @import("../mem/filter.zig").Selector;
+const EntryList = @import("../mem/list.zig").List;
+const Scanner = @import("../mem/scanner.zig");
+
+pub const Permissions = @import("perms.zig");
 
 pub const ZUA_META = zua.Meta.Object(Region, .{
     .__gc = cleanup,
@@ -21,7 +24,11 @@ pub const ZUA_META = zua.Meta.Object(Region, .{
     .getInode = getInode,
     .getPerms = getPerms,
     .getPathname = getPathname,
+    .scan = scan,
 });
+
+/// Process ID that the region belongs to.
+pid: std.posix.pid_t,
 
 /// Starting address of the memory region.
 start: usize,
@@ -36,14 +43,14 @@ offset: usize,
 inode: u64,
 
 /// Region permissions parsed from `/proc/<pid>/maps`.
-perms: FilterModule.Permissions,
+perms: Permissions,
 
 /// Pathname of the mapped object, or empty when the region is anonymous.
 pathname: []const u8,
 
 /// Frees the region pathname buffer when Lua garbage-collects the object.
 pub fn cleanup(ctx: *zua.Context, self: *Region) void {
-    ctx.state.allocator.free(self.pathname);
+    ctx.heap().free(self.pathname);
 }
 
 /// Returns the starting address of the region.
@@ -72,7 +79,7 @@ fn getInode(self: *const Region) u64 {
 }
 
 /// Returns the region permissions.
-fn getPerms(self: *const Region) FilterModule.Permissions {
+fn getPerms(self: *const Region) Permissions {
     return self.perms;
 }
 
@@ -81,9 +88,19 @@ fn getPathname(self: *const Region) []const u8 {
     return self.pathname;
 }
 
+/// Scans the region for values of the specified type that match the selector
+///
+/// Lua usage:
+/// ```lua
+/// local entries = region:scan('u32', {eq = 0x12345678})
+fn scan(ctx: *zua.Context, self: *Region, dataType: DataType, selector: Selector) !EntryList {
+    const entries = try Scanner.scanRegion(ctx, self.*, dataType, selector);
+    return try EntryList.init(ctx, entries);
+}
+
 fn display(ctx: *zua.Context, self: *Region) ![]const u8 {
     const pathname = if (self.pathname.len == 0) "(anonymous)" else self.pathname;
-    const perms_str = try FilterModule.Permissions.display(ctx, self.perms);
+    const perms_str = try Permissions.display(ctx, self.perms);
     const fmt = "region(0x{x}-0x{x}, perms={s}, path={s})";
-    return std.fmt.allocPrint(ctx.allocator(), fmt, .{ self.start, self.end, perms_str, pathname }) catch ctx.failTyped([]const u8, "Out of memory");
+    return std.fmt.allocPrint(ctx.arena(), fmt, .{ self.start, self.end, perms_str, pathname }) catch ctx.failTyped([]const u8, "Out of memory");
 }

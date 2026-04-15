@@ -26,7 +26,7 @@ pub fn scan(ctx: *zua.Context, filter: *const Filter) ![]Process {
         // Cleanup any processes that were successfully scanned before the error occurred.
         for (processList.items) |*proc| Process.cleanup(ctx, proc);
         // This is technically not necessary since the processes are allocated with the context's arena, but I want to train myself to always clean up resources properly.
-        processList.deinit(ctx.allocator());
+        processList.deinit(ctx.arena());
     }
 
     var proc_dir = std.Io.Dir.cwd().openDir(ctx.state.io, "/proc", .{ .iterate = true }) catch |err| {
@@ -69,13 +69,13 @@ pub fn scan(ctx: *zua.Context, filter: *const Filter) ![]Process {
         };
 
         if (filter.matches(&process)) {
-            try processList.append(ctx.allocator(), process);
+            try processList.append(ctx.arena(), process);
         } else {
             // If the process doesn't match the filter, we need to clean it up immediately since we're not returning it.
             Process.cleanup(ctx, &process);
         }
     }
-    return processList.toOwnedSlice(ctx.allocator());
+    return processList.toOwnedSlice(ctx.arena());
 }
 
 fn parsePid(text: []const u8) ?std.posix.pid_t {
@@ -93,7 +93,7 @@ fn readName(ctx: *zua.Context, dir: std.Io.Dir) ![]const u8 {
     // Remove trailing newline if present.
     const trimmed = std.mem.trim(u8, raw, "\n\t\r");
     // Copy with owned allocator so the process owns its name and outlive the context
-    return ctx.state.allocator.dupe(u8, trimmed);
+    return ctx.heap().dupe(u8, trimmed);
 }
 
 fn readCommandLine(ctx: *zua.Context, dir: std.Io.Dir) ![]const u8 {
@@ -106,7 +106,7 @@ fn readCommandLine(ctx: *zua.Context, dir: std.Io.Dir) ![]const u8 {
     }
     const trimmed = std.mem.trim(u8, raw, "\n\t\r");
     // Copy with owned allocator so the process owns its command line and outlive the context
-    return ctx.state.allocator.dupe(u8, trimmed);
+    return ctx.heap().dupe(u8, trimmed);
 }
 
 fn parseStatus(ctx: *zua.Context, dir: std.Io.Dir) !StatusInfo {
@@ -153,5 +153,5 @@ fn readFile(ctx: *zua.Context, dir: std.Io.Dir, name: []const u8) ![]u8 {
     if (raw.len == buffer.len) {
         return ctx.failWithFmtTyped([]u8, "{s} is too large to read", .{name});
     }
-    return ctx.allocator().dupe(u8, raw);
+    return ctx.arena().dupe(u8, raw);
 }

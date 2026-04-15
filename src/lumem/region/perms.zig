@@ -2,7 +2,11 @@
 //!
 //! These types are used when examining region permissions from `/proc/<pid>/maps`
 //! and when the Lua API accepts permission filters.
-pub const Filter = @This();
+
+/// A bitfield representing region permissions.
+///
+/// Supports decoding from Lua values and helpers for matching required flags.
+pub const Permissions = @This();
 
 const std = @import("std");
 const zua = @import("zua");
@@ -17,59 +21,54 @@ pub const Permission = enum(u8) {
     private = 1 << 4,
 };
 
-/// A bitfield representing region permissions.
-///
-/// Supports decoding from Lua values and helpers for matching required flags.
-pub const Permissions = struct {
-    bits: u8,
+bits: u8,
 
-    pub const ZUA_META = zua.Meta.Table(Permissions, .{
-        .__tostring = display,
-    }).withDecode(decode);
+pub const ZUA_META = zua.Meta.Table(Permissions, .{
+    .__tostring = display,
+}).withDecode(decode);
 
-    /// Decodes a `Permissions` value from a Lua string, integer, or table.
-    /// - String format: "rwxp" (read/write/execute + shared/private)
-    /// - Integer format: bitfield of `Permission` values
-    /// - Table format: array of permission names, e.g. `{ "read", "write" }`
-    fn decode(ctx: *zua.Context, value: Decoder.Primitive) !Permissions {
-        return switch (value) {
-            .integer => |n| blk: {
-                const bits = std.math.cast(u8, n) orelse
-                    return ctx.failTyped(Permissions, "permission integer out of range");
-                break :blk .{ .bits = bits };
-            },
-            .string => |s| parseString(ctx, s),
-            .table => |t| parseTable(ctx, t),
-            else => ctx.failTyped(Permissions, "expected permission string, integer, or table"),
-        };
-    }
+/// Decodes a `Permissions` value from a Lua string, integer, or table.
+/// - String format: "rwxp" (read/write/execute + shared/private)
+/// - Integer format: bitfield of `Permission` values
+/// - Table format: array of permission names, e.g. `{ "read", "write" }`
+fn decode(ctx: *zua.Context, value: Decoder.Primitive) !Permissions {
+    return switch (value) {
+        .integer => |n| blk: {
+            const bits = std.math.cast(u8, n) orelse
+                return ctx.failTyped(Permissions, "permission integer out of range");
+            break :blk .{ .bits = bits };
+        },
+        .string => |s| parseString(ctx, s),
+        .table => |t| parseTable(ctx, t),
+        else => ctx.failTyped(Permissions, "expected permission string, integer, or table"),
+    };
+}
 
-    /// Formats permissions as a `/proc/<pid>/maps`-style 4-character string.
-    pub fn display(ctx: *zua.Context, self: Permissions) ![]const u8 {
-        var buf: [4]u8 = [_]u8{ '-', '-', '-', '-' };
-        if (self.has(.read)) buf[0] = 'r';
-        if (self.has(.write)) buf[1] = 'w';
-        if (self.has(.execute)) buf[2] = 'x';
-        if (self.has(.shared)) buf[3] = 's';
-        if (self.has(.private)) buf[3] = 'p';
-        return ctx.allocator().dupe(u8, &buf);
-    }
+/// Formats permissions as a `/proc/<pid>/maps`-style 4-character string.
+pub fn display(ctx: *zua.Context, self: Permissions) ![]const u8 {
+    var buf: [4]u8 = [_]u8{ '-', '-', '-', '-' };
+    if (self.has(.read)) buf[0] = 'r';
+    if (self.has(.write)) buf[1] = 'w';
+    if (self.has(.execute)) buf[2] = 'x';
+    if (self.has(.shared)) buf[3] = 's';
+    if (self.has(.private)) buf[3] = 'p';
+    return ctx.arena().dupe(u8, &buf);
+}
 
-    /// Returns `true` when the given permission bit is present.
-    pub fn has(self: Permissions, perm: Permission) bool {
-        return (self.bits & @intFromEnum(perm)) != 0;
-    }
+/// Returns `true` when the given permission bit is present.
+pub fn has(self: Permissions, perm: Permission) bool {
+    return (self.bits & @intFromEnum(perm)) != 0;
+}
 
-    /// Returns `true` when all required permission bits are present.
-    pub fn hasAll(self: Permissions, required: Permissions) bool {
-        return (self.bits & required.bits) == required.bits;
-    }
+/// Returns `true` when all required permission bits are present.
+pub fn hasAll(self: Permissions, required: Permissions) bool {
+    return (self.bits & required.bits) == required.bits;
+}
 
-    /// Parses a 4-character permission string such as "rw-p".
-    pub fn fromString(ctx: *zua.Context, s: []const u8) !Permissions {
-        return parseString(ctx, s);
-    }
-};
+/// Parses a 4-character permission string such as "rw-p".
+pub fn fromString(ctx: *zua.Context, s: []const u8) !Permissions {
+    return parseString(ctx, s);
+}
 
 fn parseString(ctx: *zua.Context, s: []const u8) !Permissions {
     if (s.len != 4) {

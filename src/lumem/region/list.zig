@@ -23,7 +23,7 @@ pub fn init(ctx: *zua.Context, elements: []Region) !List {
         .regions = std.ArrayList(zua.Object(Region)).empty,
     };
     for (elements) |region| {
-        try list.regions.append(ctx.state.allocator, zua.Object(Region).create(ctx.state, region).takeOwnership());
+        try list.regions.append(ctx.heap(), zua.Object(Region).create(ctx.state, region).takeOwnership());
     }
     return list;
 }
@@ -45,7 +45,7 @@ fn len(self: *List, _: *List) usize {
 /// Formats the list for Lua `tostring()`.
 fn display(ctx: *zua.Context, self: *List) ![]const u8 {
     const fmt = "RegionList({d} regions)";
-    return std.fmt.allocPrint(ctx.allocator(), fmt, .{self.regions.items.len}) catch ctx.failTyped([]const u8, "Out of memory");
+    return std.fmt.allocPrint(ctx.arena(), fmt, .{self.regions.items.len}) catch ctx.failTyped([]const u8, "Out of memory");
 }
 
 /// Frees the `RegionList` and its owned region objects when Lua garbage-collects it.
@@ -53,5 +53,5 @@ fn deinit(ctx: *zua.Context, self: *List) void {
     for (self.regions.items) |region| {
         region.release();
     }
-    self.regions.deinit(ctx.state.allocator);
+    self.regions.deinit(ctx.heap());
 }

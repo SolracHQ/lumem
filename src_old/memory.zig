@@ -102,16 +102,16 @@ pub fn parseMaps(allocator: std.mem.Allocator, pid: std.posix.pid_t) Error![]Reg
     return Error.NotImplemented;
 }
 
-fn expectFullTransfer(result: usize, expected_len: usize) Error!void {
+fn expectFullTransfer(result: usize, expected_len: usize) !void {
     switch (linux.errno(result)) {
         .SUCCESS => {
-            if (result != expected_len) return Error.PartialTransfer;
+            if (result != expected_len) return error.PartialTransfer;
         },
-        .FAULT => return Error.InvalidAddress,
-        .INVAL => return Error.InvalidArgument,
-        .NOMEM => return Error.OutOfMemory,
-        .PERM => return Error.AccessDenied,
-        .SRCH => return Error.NoSuchProcess,
-        else => return Error.Unexpected,
+        .FAULT => return error.InvalidAddress,
+        .INVAL => return error.InvalidArgument,
+        .NOMEM => return error.OutOfMemory,
+        .PERM => return error.AccessDenied,
+        .SRCH => return error.NoSuchProcess,
+        else => return error.Unexpected,
     }
 }
