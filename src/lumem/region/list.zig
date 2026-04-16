@@ -13,6 +13,7 @@ pub const ZUA_META = zua.Meta.Object(List, .{
     .__len = len,
     .__tostring = display,
     .get = get,
+    .iter = iter,
 });
 
 regions: std.ArrayList(zua.Object(Region)),
@@ -46,6 +47,23 @@ fn len(self: *List, _: *List) usize {
 fn display(ctx: *zua.Context, self: *List) ![]const u8 {
     const fmt = "RegionList({d} regions)";
     return std.fmt.allocPrint(ctx.arena(), fmt, .{self.regions.items.len}) catch ctx.failTyped([]const u8, "Out of memory");
+}
+
+fn iget(self: *List, index: usize) !struct { ?usize, ?zua.Object(Region) } {
+    const region = self.get(index);
+    const next = if (region != null) index + 1 else null;
+    return .{
+        next,
+        region,
+    };
+}
+
+fn iter(self: zua.Handlers.Userdata) struct { zua.ZuaFn.ZuaFnType(iget, .{}), zua.Handlers.Userdata, ?usize } {
+    return .{
+        zua.ZuaFn.new(iget, .{}),
+        self,
+        1,
+    };
 }
 
 /// Frees the `RegionList` and its owned region objects when Lua garbage-collects it.

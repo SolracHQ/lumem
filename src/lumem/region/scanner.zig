@@ -13,7 +13,7 @@ const proc_maps_limit = 1024 * 1024;
 
 /// Reads `/proc/<pid>/maps`, optionally filters by permissions, and returns
 /// an owned slice of parsed `Region` values.
-pub fn scan(ctx: *zua.Context, pid: std.posix.pid_t, filter: ?Region.Permissions) ![]Region {
+pub fn scan(ctx: *zua.Context, pid: std.posix.pid_t, filter: Region.Permissions) ![]Region {
     var proc_dir = std.Io.Dir.cwd().openDir(ctx.state.io, "/proc", .{ .iterate = true }) catch |err| {
         return ctx.failWithFmtTyped([]Region, "Failed to open /proc: {s}", .{@errorName(err)});
     };
@@ -40,7 +40,7 @@ pub fn scan(ctx: *zua.Context, pid: std.posix.pid_t, filter: ?Region.Permissions
         if (trimmed.len == 0) continue;
 
         const region = try parseLine(ctx.heap(), trimmed, pid);
-        if (filter == null or region.perms.hasAll(filter.?)) {
+        if (region.perms.hasAll(filter)) {
             try regions.append(ctx.arena(), region);
         } else {
             ctx.heap().free(region.pathname);

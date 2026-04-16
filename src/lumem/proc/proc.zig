@@ -73,7 +73,7 @@ pub fn getCmdLine(self: *const Process) []const u8 {
 }
 
 pub fn regions(ctx: *zua.Context, self: *const Process, filter: ?Region.Permissions) !RegionList.List {
-    const _regions = try RegionScanner.scan(ctx, self.pid, filter);
+    const _regions = try RegionScanner.scan(ctx, self.pid, filter orelse try Region.Permissions.fromString(ctx, "rw--"));
     return try RegionList.init(ctx, _regions);
 }
 
