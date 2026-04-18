@@ -16,5 +16,14 @@ pub fn main(init: std.process.Init) !void {
 
     globals.set(&context, "lumem", Lumem{});
 
+    const args = try init.minimal.args.toSlice(state.allocator);
+    defer state.allocator.free(args);
+
+    if (args.len == 2) {
+        var executor = zua.Executor{};
+        try executor.execute(&context, .{ .code = .{ .file = args[1] } });
+        return;
+    }
+
     try repl.run(state);
 }

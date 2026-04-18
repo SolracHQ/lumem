@@ -6,17 +6,23 @@ pub const List = @This();
 const std = @import("std");
 const zua = @import("zua");
 const Region = @import("region.zig");
+const Entry = @import("../mem/entry.zig");
+const EntryList = @import("../mem/list.zig").List;
+const Scanner = @import("../mem/scanner.zig");
+const DataType = @import("../mem/data_type.zig").DataType;
+const Selector = @import("../mem/filter.zig").Selector;
 
-pub const ZUA_META = zua.Meta.Object(List, .{
+pub const ZUA_META = zua.Meta.List(List, getElements, .{
     .__gc = deinit,
-    .__index = get,
-    .__len = len,
     .__tostring = display,
-    .get = get,
-    .iter = iter,
+    .scan = scan,
 });
 
 regions: std.ArrayList(zua.Object(Region)),
+
+fn getElements(self: *List) []zua.Object(Region) {
+    return self.regions.items;
+}
 
 /// Constructs a new `RegionList` from a slice of `Region` values.
 pub fn init(ctx: *zua.Context, elements: []Region) !List {
@@ -29,41 +35,22 @@ pub fn init(ctx: *zua.Context, elements: []Region) !List {
     return list;
 }
 
-/// Returns the region at the 1-based Lua index, or `nil` when out of range.
-fn get(self: *List, index: usize) ?zua.Object(Region) {
-    if (index == 0) return null;
-    if (index - 1 < self.regions.items.len) {
-        return self.regions.items[index - 1];
-    }
-    return null;
-}
-
-/// Returns the number of regions in the list.
-fn len(self: *List, _: *List) usize {
-    return self.regions.items.len;
-}
-
 /// Formats the list for Lua `tostring()`.
 fn display(ctx: *zua.Context, self: *List) ![]const u8 {
     const fmt = "RegionList({d} regions)";
     return std.fmt.allocPrint(ctx.arena(), fmt, .{self.regions.items.len}) catch ctx.failTyped([]const u8, "Out of memory");
 }
 
-fn iget(self: *List, index: usize) !struct { ?usize, ?zua.Object(Region) } {
-    const region = self.get(index);
-    const next = if (region != null) index + 1 else null;
-    return .{
-        next,
-        region,
-    };
-}
+pub fn scan(ctx: *zua.Context, self: *List, dataType: DataType, selector: Selector) !EntryList.List {
+    var entries = std.ArrayList(Entry).empty;
+    errdefer entries.deinit(ctx.arena());
 
-fn iter(self: zua.Handlers.Userdata) struct { zua.ZuaFn.ZuaFnType(iget, .{}), zua.Handlers.Userdata, ?usize } {
-    return .{
-        zua.ZuaFn.new(iget, .{}),
-        self,
-        1,
-    };
+    for (self.regions.items) |region| {
+        const region_entries = try Scanner.scanRegion(ctx, region.get().*, dataType, selector);
+        try entries.appendSlice(ctx.arena(), region_entries);
+    }
+
+    return try EntryList.init(ctx, entries.items);
 }
 
 /// Frees the `RegionList` and its owned region objects when Lua garbage-collects it.

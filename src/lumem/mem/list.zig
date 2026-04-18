@@ -7,17 +7,20 @@ const std = @import("std");
 const zua = @import("zua");
 
 const Entry = @import("entry.zig");
+const Selector = @import("filter.zig").Selector;
 
-pub const ZUA_META = zua.Meta.Object(List, .{
-    .__index = get,
+pub const ZUA_META = zua.Meta.List(List, getElements, .{
     .__gc = deinit,
-    .__len = len,
     .__tostring = display,
-    .get = get,
-    .iter = iter,
+    .filter = filter,
+    .set = set,
 });
 
 entries: std.ArrayList(zua.Object(Entry)),
+
+fn getElements(self: *List) []zua.Object(Entry) {
+    return self.entries.items;
+}
 
 /// Constructs a new `EntryList` from a slice of `Entry` values.
 pub fn init(ctx: *zua.Context, elements: []Entry) !List {
@@ -30,41 +33,29 @@ pub fn init(ctx: *zua.Context, elements: []Entry) !List {
     return list;
 }
 
-/// Returns the entry at the 1-based Lua index, or `nil` when out of range.
-fn get(self: *List, index: usize) ?zua.Object(Entry) {
-    if (index == 0) return null;
-    if (index - 1 < self.entries.items.len) {
-        return self.entries.items[index - 1];
-    }
-    return null;
-}
-
-/// Returns the number of entries in the list.
-fn len(self: *List, _: *List) usize {
-    return self.entries.items.len;
-}
-
 /// Formats the list for Lua `tostring()`.
 fn display(ctx: *zua.Context, self: *List) ![]const u8 {
     const fmt = "EntryList({d} entries)";
     return std.fmt.allocPrint(ctx.arena(), fmt, .{self.entries.items.len}) catch ctx.failTyped([]const u8, "Out of memory");
 }
 
-fn iget(self: *List, index: usize) !struct { ?usize, ?zua.Object(Entry) } {
-    const entry = self.get(index);
-    const next = if (entry != null) index + 1 else null;
-    return .{
-        next,
-        entry,
-    };
+pub fn filter(ctx: *zua.Context, self: *List, selector: Selector) !List {
+    var result = std.ArrayList(Entry).empty;
+    errdefer result.deinit(ctx.arena());
+
+    for (self.entries.items) |entry| {
+        if (try entry.get().matches(ctx, selector)) {
+            try result.append(ctx.arena(), entry.get().*);
+        }
+    }
+
+    return try init(ctx, result.items);
 }
 
-fn iter(self: zua.Handlers.Userdata) struct { zua.ZuaFn.ZuaFnType(iget, .{}), zua.Handlers.Userdata, ?usize } {
-    return .{
-        zua.ZuaFn.new(iget, .{}),
-        self,
-        1,
-    };
+pub fn set(ctx: *zua.Context, self: *List, value: zua.Decoder.Primitive) !void {
+    for (self.entries.items) |entry| {
+        try Entry.set(ctx, entry.get(), value);
+    }
 }
 
 /// Frees the `EntryList` and its owned entry objects when Lua garbage-collects it.

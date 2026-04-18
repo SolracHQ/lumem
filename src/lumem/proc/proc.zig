@@ -13,6 +13,11 @@ pub const List = @import("list.zig");
 const Region = @import("../region/region.zig");
 const RegionList = @import("../region/list.zig");
 const RegionScanner = @import("../region/scanner.zig");
+const MemScanner = @import("../mem/scanner.zig");
+const Entry = @import("../mem/entry.zig");
+const EntryList = @import("../mem/list.zig").List;
+const DataType = @import("../mem/data_type.zig").DataType;
+const Selector = @import("../mem/filter.zig").Selector;
 
 /// Zua metadata for `Process` objects.
 ///
@@ -26,6 +31,7 @@ pub const ZUA_META = zua.Meta.Object(Process, .{
     .getGid = getGid,
     .getCmdLine = getCmdLine,
     .regions = regions,
+    .scan = scan,
 });
 
 /// Parent process ID, if available.
@@ -77,8 +83,26 @@ pub fn regions(ctx: *zua.Context, self: *const Process, filter: ?Region.Permissi
     return try RegionList.init(ctx, _regions);
 }
 
+pub fn scan(ctx: *zua.Context, self: *const Process, dataType: DataType, selector: Selector, filter: ?Region.Permissions) !EntryList.List {
+    const region_filter = filter orelse try Region.Permissions.fromString(ctx, "rw--");
+    const _regions = try RegionScanner.scan(ctx, self.pid, region_filter);
+    defer for (_regions) |*region| {
+        Region.cleanup(ctx, region);
+    };
+
+    var entries = std.ArrayList(Entry).empty;
+    errdefer entries.deinit(ctx.arena());
+
+    for (_regions) |region| {
+        const region_entries = try MemScanner.scanRegion(ctx, region, dataType, selector);
+        try entries.appendSlice(ctx.arena(), region_entries);
+    }
+
+    return try EntryList.init(ctx, entries.items);
+}
+
 fn display(ctx: *zua.Context, self: *Process) ![]const u8 {
-    const fmt = "Process {{ pid: {x}, name: {s} }}";
+    const fmt = "Process {{ pid: {d}, name: {s} }}";
     const args = .{ self.pid, self.name };
     return std.fmt.allocPrint(ctx.arena(), fmt, args) catch ctx.failTyped([]const u8, "Out of memory");
 }

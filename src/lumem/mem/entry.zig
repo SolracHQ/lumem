@@ -4,6 +4,7 @@ const Permissions = @import("../region/perms.zig").Permissions;
 const DataType = @import("../mem/data_type.zig").DataType;
 const SimpleType = @import("../mem/data_type.zig").SimpleType;
 const Ops = @import("../mem/ops.zig");
+const Selector = @import("../mem/filter.zig").Selector;
 
 const zua = @import("zua");
 const std = @import("std");
@@ -47,7 +48,7 @@ perms: Permissions,
 address: usize,
 value: Value,
 
-fn set(ctx: *zua.Context, self: *Entry, value: zua.Decoder.Primitive) !void {
+pub fn set(ctx: *zua.Context, self: *Entry, value: zua.Decoder.Primitive) !void {
     switch (self.value) {
         .U8 => try setTyped(u8, ctx, self, value),
         .U16 => try setTyped(u16, ctx, self, value),
@@ -62,24 +63,85 @@ fn set(ctx: *zua.Context, self: *Entry, value: zua.Decoder.Primitive) !void {
     }
 }
 
-fn get(self: *Entry) zua.Decoder.Primitive {
+fn readValue(comptime T: type, ctx: *zua.Context, self: *const Entry) !T {
+    var buffer: [1]T = undefined;
+    try Ops.readTyped(T, ctx, self.pid, self.address, &buffer);
+    return buffer[0];
+}
+
+pub fn matches(self: *const Entry, ctx: *zua.Context, selector: Selector) !bool {
     return switch (self.value) {
-        .U8 => |v| .{ .integer = @intCast(v) },
-        .U16 => |v| .{ .integer = @intCast(v) },
-        .U32 => |v| .{ .integer = @intCast(v) },
-        .U64 => |v| blk: {
-            if (std.math.cast(i64, v)) |value| {
-                break :blk .{ .integer = value };
-            } else {
-                break :blk .{ .float = @floatFromInt(v) };
-            }
+        .U8 => |value| try selector.matches(u8, ctx, try readValue(u8, ctx, self), value),
+        .U16 => |value| try selector.matches(u16, ctx, try readValue(u16, ctx, self), value),
+        .U32 => |value| try selector.matches(u32, ctx, try readValue(u32, ctx, self), value),
+        .U64 => |value| try selector.matches(u64, ctx, try readValue(u64, ctx, self), value),
+        .I8 => |value| try selector.matches(i8, ctx, try readValue(i8, ctx, self), value),
+        .I16 => |value| try selector.matches(i16, ctx, try readValue(i16, ctx, self), value),
+        .I32 => |value| try selector.matches(i32, ctx, try readValue(i32, ctx, self), value),
+        .I64 => |value| try selector.matches(i64, ctx, try readValue(i64, ctx, self), value),
+        .F32 => |value| try selector.matches(f32, ctx, try readValue(f32, ctx, self), value),
+        .F64 => |value| try selector.matches(f64, ctx, try readValue(f64, ctx, self), value),
+    };
+}
+
+fn get(ctx: *zua.Context, self: *Entry) !zua.Decoder.Primitive {
+    return switch (self.value) {
+        .U8 => {
+            const value = try readValue(u8, ctx, self);
+            self.value = Value.from(u8, value);
+            return .{ .integer = @intCast(value) };
         },
-        .I8 => |v| .{ .integer = @intCast(v) },
-        .I16 => |v| .{ .integer = @intCast(v) },
-        .I32 => |v| .{ .integer = @intCast(v) },
-        .I64 => |v| .{ .integer = v },
-        .F32 => |v| .{ .float = @floatCast(v) },
-        .F64 => |v| .{ .float = @floatCast(v) },
+        .U16 => {
+            const value = try readValue(u16, ctx, self);
+            self.value = Value.from(u16, value);
+            return .{ .integer = @intCast(value) };
+        },
+        .U32 => {
+            const value = try readValue(u32, ctx, self);
+            self.value = Value.from(u32, value);
+            return .{ .integer = @intCast(value) };
+        },
+        .U64 => {
+            const value = try readValue(u64, ctx, self);
+            self.value = Value.from(u64, value);
+            return blk: {
+                if (std.math.cast(i64, value)) |int_value| {
+                    break :blk .{ .integer = int_value };
+                } else {
+                    break :blk .{ .float = @floatFromInt(value) };
+                }
+            };
+        },
+        .I8 => {
+            const value = try readValue(i8, ctx, self);
+            self.value = Value.from(i8, value);
+            return .{ .integer = @intCast(value) };
+        },
+        .I16 => {
+            const value = try readValue(i16, ctx, self);
+            self.value = Value.from(i16, value);
+            return .{ .integer = @intCast(value) };
+        },
+        .I32 => {
+            const value = try readValue(i32, ctx, self);
+            self.value = Value.from(i32, value);
+            return .{ .integer = @intCast(value) };
+        },
+        .I64 => {
+            const value = try readValue(i64, ctx, self);
+            self.value = Value.from(i64, value);
+            return .{ .integer = value };
+        },
+        .F32 => {
+            const value = try readValue(f32, ctx, self);
+            self.value = Value.from(f32, value);
+            return .{ .float = @floatCast(value) };
+        },
+        .F64 => {
+            const value = try readValue(f64, ctx, self);
+            self.value = Value.from(f64, value);
+            return .{ .float = @floatCast(value) };
+        },
     };
 }
 

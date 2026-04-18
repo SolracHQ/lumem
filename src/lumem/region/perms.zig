@@ -31,16 +31,16 @@ pub const ZUA_META = zua.Meta.Table(Permissions, .{
 /// - String format: "rwxp" (read/write/execute + shared/private)
 /// - Integer format: bitfield of `Permission` values
 /// - Table format: array of permission names, e.g. `{ "read", "write" }`
-fn decode(ctx: *zua.Context, value: Decoder.Primitive) !Permissions {
+fn decode(ctx: *zua.Context, value: Decoder.Primitive) !?Permissions {
     return switch (value) {
         .integer => |n| blk: {
             const bits = std.math.cast(u8, n) orelse
-                return ctx.failTyped(Permissions, "permission integer out of range");
+                return ctx.failTyped(?Permissions, "permission integer out of range");
             break :blk .{ .bits = bits };
         },
-        .string => |s| parseString(ctx, s),
-        .table => |t| parseTable(ctx, t),
-        else => ctx.failTyped(Permissions, "expected permission string, integer, or table"),
+        .string => |s| try parseString(ctx, s),
+        .table => |t| try parseTable(ctx, t),
+        else => ctx.failTyped(?Permissions, "expected permission string, integer, or table"),
     };
 }
 

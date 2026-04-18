@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.0
+
+Rebuilt the API from the ground up using Zua for Lua binding and REPL support.
+
+### Changed
+
+- Replaced the old root `mem` table with `lumem` as a userdata-only entry point
+- Moved all API access to Lua methods on `lumem` and process objects
+- Switched lists to raw Lua lists backed by self-referential objects, enabling `:iter()` and aggregated operations
+- Delegated REPL complexity entirely to Zua, including multiline input, history, and syntax highlighting
+- Made input decoding flexible through Zua hooks, removing manual stack access (`-1`, `-2`, etc.)
+- Scan selectors are now much more powerful and can use callback predicates
+- Wrote the API with explicit type control so users can choose write types directly
+
+### Added
+
+- Syntax highlighting in the REPL via Zua's built-in tooling
+- More flexible read/write APIs with typed access from Lua
+
 ## 0.0.2
 
 Process inspection, memory scanning, and an interactive REPL.

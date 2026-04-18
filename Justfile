@@ -1,8 +1,8 @@
 default:
     @just --list
 
-build:
-    zig build
+build *args:
+    zig build {{args}}
 
 run *args:
     zig build

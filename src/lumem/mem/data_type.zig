@@ -72,11 +72,11 @@ pub const DataType = union(enum) {
     pub const ZUA_META = zua.Meta.Object(DataType, .{}).withDecode(decode);
 };
 
-fn decode(ctx: *zua.Context, value: zua.Decoder.Primitive) !DataType {
+fn decode(ctx: *zua.Context, value: zua.Decoder.Primitive) !?DataType {
     return switch (value) {
-        .string => |str| fromString(str, ctx),
-        .userdata => |ud| zua.Object(DataType).from(ud).get().*,
-        else => return ctx.failWithFmtTyped(DataType, "expected string or DataType userdata, got {s}", .{@tagName(value)}),
+        .string => |str| try fromString(str, ctx),
+        .userdata => null,
+        else => return ctx.failWithFmtTyped(?DataType, "expected string or DataType userdata, got {s}", .{@tagName(value)}),
     };
 }
 
