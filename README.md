@@ -1,6 +1,6 @@
-# MemScript
+# Lumem
 
-MemScript is a scriptable process memory inspector and editor, driven by Lua.
+Lumem is a scriptable process memory inspector and editor, driven by Lua.
 A hobby project to learn Zig and Lua, and mess with game memory along the way.
 
 If you just want to see what it can do, skip to [Usage](#usage).
@@ -16,11 +16,13 @@ For the scripting layer I ruled out a UI early, partly because I wanted somethin
 
 ## Status
 
-- `memscript <script.lua>` boots Lua, registers globals, loads the script, and runs it.
-- `memscript` with no arguments starts an interactive REPL with history and tab completion.
-- `proc.list()` enumerates live processes with optional name filtering.
-- `process:scan()` scans all readable memory regions and returns matched entries.
-- `entries:rescan()` narrows a previous result with a new condition.
+- `lumem <script.lua>` boots Lua, registers globals, loads the script, and runs it.
+- `lumem` with no arguments starts an interactive REPL with history and tab completion.
+- `lumem:scan()` enumerates live processes with optional filtering.
+- `ProcessList:get(index)` returns a `Process` object.
+- `Process:scan()` scans all readable memory regions and returns matched entries.
+- `ProcessList:scan()` scans one or more filtered processes and returns a combined `EntryList`.
+- `EntryList:filter()` narrows a previous result with a selector.
 - Individual entries support `get()` and `set()`.
 
 ## Usage
@@ -41,29 +43,67 @@ In the REPL, top-level locals do not persist between lines. Use bare assignment 
 
 ```lua
 -- this works across lines
-p = proc.list({name = "target"})[1]
+res = lumem:scan({name = "target"})
 
 -- this does not
-local p = proc.list({name = "target"})[1]
+local res = lumem:scan({name = "target"})
 ```
 
 ## API
 
 ```lua
--- list processes, optionally filtered by name substring
-local p = proc.list({name = "target"})[1]
+-- scan processes, optionally filtered by name substring
+local process_list = lumem:scan({name = "target"})
+local process = process_list:get(1)
 
--- scan the whole process
-local entries = p:scan({type = "f32", eq = 8.3})
-local entries = p:scan({type = "u32", in_range = {min = 0, max = 255}})
+-- scan a single process
+local entries = process:scan("f32", {eq = 8.3})
+local entries = process:scan("u32", {range = {0, 255}})
+
+-- scan a region
+local regions = process:regions("rw")
+local entries = regions[1]:scan("u32", {gt = 100})
+
+-- scan a filtered process list
+local entries = process_list:scan("u32", {eq = 123})
 
 -- narrow down results
-entries = entries:rescan({eq = 9.0})
-entries = entries:rescan({in_range = {min = 1.0, max = 10.0}})
+entries = entries:filter({eq = 9.0})
+entries = entries:filter({range = {1.0, 10.0}})
 
 -- read and write individual entries
 print(entries[1]:get())
 entries[1]:set(9.0)
+
+-- write to all the entries at once
+entries:set(9.0)
+
+```
+
+### Filter options
+
+`lumem:scan({ ... })` supports process filters:
+- `pid`: exact process ID match
+- `uid`: exact user ID match
+- `name`: substring match against the process name
+- `cmdLine`: substring match against the command line
+
+`Process:scan(type, selector)` and `EntryList:filter(selector)` support memory selectors:
+- `eq`: exact match (`{eq = 123}`)
+- `ne`: not equal (`{ne = 0}`)
+- `gt`, `ge`, `lt`, `le`: numeric comparisons
+- `range`: inclusive range (`{range = {50, 100}}`)
+- `custom`: callback predicate (`{custom = function(value, prev_value) return value == 50 end}`)
+- `change`: one of `"increase"`, `"decrease"`, `"none"`, or `"any"`
+
+`custom` callbacks receive the scanned value as the first argument and the previous value as the second argument; if you only need the current value, you can ignore the second argument.
+
+```lua
+local entries = process:scan("u32", {
+    custom = function(value, prev)
+        return value % 2 == 0 and (prev == nil or value > prev)
+    end,
+})
 ```
 
 ## Example

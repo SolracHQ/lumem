@@ -1,12 +1,12 @@
 default:
     @just --list
 
-build:
-    zig build
+build *args:
+    zig build {{args}}
 
 run *args:
     zig build
-    sudo ./zig-out/bin/memscript {{args}}
+    sudo ./zig-out/bin/lumem {{args}}
 
 test:
     zig build test

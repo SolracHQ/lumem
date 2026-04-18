@@ -1,9 +1,14 @@
 .{
     .name = .memscript,
-    .version = "0.0.2",
+    .version = "0.1.0",
     .fingerprint = 0x940cd73efe277c99,
     .minimum_zig_version = "0.16.0-dev.2984+cb7d2b056",
-    .dependencies = .{},
+    .dependencies = .{
+        .zua = .{
+            .url = "git+https://github.com/SolracHQ/zua#3d04ad31ddeff61f46b7a8c9d65dd88ce692144f",
+            .hash = "zua-0.8.0-DphaSYT0EwDOHl3M90rEZXygLnV_ODCjE4lw29Ef1jts",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",

@@ -1,8 +1,8 @@
 local pid = 121233
 local address = 0x7ffcd98025e8
 
-local value = mem.read_u32(pid, address)
+local value = lumem:get(pid, address, "u32")
 print("value: " .. value)
 
-mem.write_u32(pid, address, 33)
-print("Value at address after write: " .. mem.read_u32(pid, address))
+lumem:set(pid, address, "u32", 33)
+print("value at address after write: " .. lumem:get(pid, address, "u32"))
