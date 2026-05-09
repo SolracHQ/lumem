@@ -28,9 +28,7 @@ const methods = .{
     .entry = zua.Native.new(m_entry, .{}, .{
         .description = "Creates a typed Entry at a process memory address for reading and writing.",
         .args = &.{
-            .{ .name = "pid", .description = "Target process ID." },
-            .{ .name = "address", .description = "Memory address." },
-            .{ .name = "dataType", .description = "Data type string (\"u8\", \"i32\", \"f64\", etc.)." },
+            .{ .name = "config", .description = "Table with pid, address, type, and optional size for str." },
         },
     }),
 };
@@ -40,24 +38,27 @@ pub const ZUA_META = Meta.Object(Lumem, methods, .{
     .description = "The root scripting object for process memory inspection. Provides scan, entry, and self.",
 });
 
+/// Scans live processes and returns a ProcList matching the optional filter.
 fn m_scan(ctx: *zua.Context, _: *Lumem, filter: ?Process.Filter) !Process.List {
     const _filter = filter orelse Process.Filter{};
     const procs = try Process.scanAll(ctx, &_filter);
     return try Process.List.init(ctx, procs);
 }
 
+/// Returns a Process for the current process. No root needed.
 fn m_self(ctx: *zua.Context, _: *Lumem) !Process {
     return Process.getSelf(ctx);
 }
 
-fn m_entry(ctx: *zua.Context, _: *Lumem, pid: std.posix.pid_t, address: usize, dataType: DataType) !Entry {
-    const simple = switch (dataType) {
+/// Creates a typed Entry at a process memory address for reading and writing.
+fn m_entry(ctx: *zua.Context, _: *Lumem, config: EntryConfig) !Entry {
+    const simple = switch (config.type) {
         .Simple => |s| s,
         .Aggregated => return ctx.failTyped(Entry, "cannot create entry for aggregated data type"),
     };
     return Entry{
-        .pid = pid,
-        .address = address,
+        .pid = config.pid,
+        .address = config.address,
         .perms = .{ .bits = @intFromEnum(Permissions.Permission.read) | @intFromEnum(Permissions.Permission.write) },
         .value = switch (simple) {
             .u8 => Entry.Value{ .u8 = 0 },
@@ -70,10 +71,15 @@ fn m_entry(ctx: *zua.Context, _: *Lumem, pid: std.posix.pid_t, address: usize, d
             .i64 => Entry.Value{ .i64 = 0 },
             .f32 => Entry.Value{ .f32 = 0 },
             .f64 => Entry.Value{ .f64 = 0 },
+            .str => value: {
+                const size = config.size orelse return ctx.failTyped(Entry, "size required for str type");
+                break :value Entry.Value{ .str = try ctx.heap().alloc(u8, size) };
+            },
         },
     };
 }
 
+/// Formats the Lumem object with usage help for Lua tostring().
 fn m_display(_: *zua.Context, _: *Lumem) []const u8 {
     return "lumem: scriptable process memory inspector.\n" ++
         "Example:\n" ++
@@ -81,11 +87,29 @@ fn m_display(_: *zua.Context, _: *Lumem) []const u8 {
         "  p = processes[1]\n" ++
         "  regions = p:regions(\"rw\")\n" ++
         "  entries = regions[1]:scan(\"u32\", {eq = 0})\n" ++
-        "  e = lumem:entry(pid, address, \"u32\")\n" ++
+         "  e = lumem:entry({ pid = pid, address = address, type = \"u32\" })\n" ++
         "  e:set(33)\n" ++
         "  value = e:get()\n" ++
         "Use tostring(lumem) to show this help again.";
 }
+
+const EntryConfig = struct {
+    pid: std.posix.pid_t,
+    address: usize,
+    type: DataType,
+    size: ?usize = null,
+
+    pub const ZUA_META = zua.Meta.Table(EntryConfig, .{}, .{
+        .name = "EntryConfig",
+        .description = "Configuration for lumem:entry().",
+        .field_descriptions = .{
+            .pid = "Target process ID.",
+            .address = "Memory address.",
+            .type = "Data type string (\"u8\", \"i32\", \"str\", etc.).",
+            .size = "Required for str type. Buffer size in bytes.",
+        },
+    });
+};
 
 test {
     std.testing.refAllDecls(@This());

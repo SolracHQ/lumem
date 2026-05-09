@@ -5,13 +5,16 @@
 ### Breaking
 
 - `lumem:get()` and `lumem:set()` removed. Use `lumem:entry()` then `entry:get()` / `entry:set()` instead
+- Renamed Lua methods to snake_case following the LuaRocks style guide
 
 ### Added
 
 - `lumem:self()` returns the current process
-- `lumem:entry(pid, address, dataType)` creates a typed entry for reading and writing
+- `lumem:entry({ pid, address, type, size })` creates a typed entry, table-based config with optional size for str
 - `zig build docs` generates Lua type stubs to stdout
 - `just docs` saves stubs to `stubs/lumem.d.lua`
+- `example/target.zig` example target process for testing scans
+- `zig build target` builds and runs the example target
 
 ### Changed
 
@@ -21,6 +24,12 @@
 - Updated ZUA_META blocks to match zua 0.13 API
 - All Lua methods now include descriptions and argument documentation
 - SimpleType enum variants renamed to lowercase (U8 -> u8, etc.)
+- String type support added: scan memory with "string" type, contains/prefix selectors, read and write string entries
+- Display overhaul: Process, Region, Entry, and all list types now show rich formatted tables with all fields
+- EntryList display shows type summary and live vs cached values
+- Entry filter now updates cached value after reading, so display reflects current state
+- matches() signature changed from *const Entry to *Entry
+- Best-effort strategy on bulk methods: set() continues on errors and reports a summary, filter() skips entries that error
 
 ## 0.1.0
 

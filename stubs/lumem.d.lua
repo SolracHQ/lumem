@@ -5,6 +5,14 @@
 -- A bitfield of memory region permission flags.
 local Permissions = {}
 
+---@class EntryConfig
+---@field pid integer # Target process ID.
+---@field address integer # Memory address.
+---@field type DataType # Data type string ("u8", "i32", "str", etc.).
+---@field size integer? # Required for str type. Buffer size in bytes.
+-- Configuration for lumem:entry().
+local EntryConfig = {}
+
 ---@class Entry
 -- A typed memory value at a fixed address.
 local Entry = {}
@@ -66,12 +74,17 @@ local Lumem = {}
 -- A comparison predicate for filtering memory scan results.
 ---@alias Selector
 ---| number # Shorthand for { eq = x }.
+---| string # Shorthand for { eq = s }.
 ---| function # Shorthand for { custom = f }.
 ---| { eq: any } # Equal to the given value.
 ---| { gt: any } # Greater than the given value.
 ---| { lt: any } # Less than the given value.
+---| { ge: any } # Greater than or equal to the given value.
+---| { le: any } # Less than or equal to the given value.
 ---| { ne: any } # Not equal to the given value.
 ---| { range: any[] } # Inclusive range as { lo, hi }.
+---| { contains: any } # Substring match (strings only).
+---| { prefix: any } # Prefix match (strings only).
 ---| { change: ChangeType } # Change type: increase, decrease, none, any.
 ---| { custom: function } # Custom Lua function(value, prev_value) returning bool.
 
@@ -80,10 +93,30 @@ local Lumem = {}
 ---| string # Shorthand for { name = s }.
 ---| { pid: integer?, uid: integer?, name: string?, cmdLine: string? } # Table of filter criteria.
 
+-- Returns the size of this region in bytes.
+---@return integer
+function Region:get_size() end
+
+-- Returns the mapped file pathname, or empty string if anonymous.
+---@return string
+function Region:get_pathname() end
+
+-- Returns the group ID of the process, or nil if unavailable.
+---@return integer?
+function Process:get_gid() end
+
+-- Returns the permission flags of this region.
+---@return Permissions
+function Region:get_perms() end
+
 -- Returns a new list with only entries matching a selector.
 ---@param selector Selector # Comparison predicate table.
 ---@return EntryList
 function EntryList:filter(selector) end
+
+-- Returns the end address of this region.
+---@return integer
+function Region:get_end() end
 
 -- Returns a new list with only processes matching the given criteria.
 ---@param filter Filter # Filter with pid, uid, name, or cmdLine fields.
@@ -96,13 +129,13 @@ function ProcList:filter(filter) end
 ---@return EntryList
 function RegionList:scan(dataType, selector) end
 
--- Returns the user ID that owns the process, or nil if unavailable.
----@return integer?
-function Process:getUid() end
+-- Returns the inode of the mapped file, or 0 if anonymous.
+---@return integer
+function Region:get_inode() end
 
 -- Returns the full command line with null separators replaced by spaces.
 ---@return string
-function Process:getCmdLine() end
+function Process:get_cmd_line() end
 
 -- Returns the element at the given 1-based index.
 ---@param index integer # 1-based index.
@@ -124,50 +157,20 @@ function ProcList:scan(dataType, selector, filter) end
 ---@param value any # Value to write to each entry's address.
 function EntryList:set(value) end
 
--- Returns the size of this region in bytes.
----@return integer
-function Region:getSize() end
-
 -- Returns the element at the given 1-based index.
 ---@param index integer # 1-based index.
 ---@return Region?
 function RegionList:get(index) end
 
--- Returns the parent process ID, or nil if unavailable.
----@return integer?
-function Process:getParentPid() end
-
 -- Writes a new value to this entry's address in the target process.
 ---@param value any # Value to write.
 function Entry:set(value) end
-
--- Returns the start address of this region.
----@return integer
-function Region:getStart() end
 
 -- Returns an iterator compatible with Lua for..in syntax.
 ---@return function
 ---@return userdata
 ---@return integer?
 function RegionList:iter() end
-
--- Returns the permission flags of this region.
----@return Permissions
-function Region:getPerms() end
-
--- Returns the file offset of this region.
----@return integer
-function Region:getOffset() end
-
--- Returns the mapped file pathname, or empty string if anonymous.
----@return string
-function Region:getPathname() end
-
--- Scans this region for memory values matching the data type and selector.
----@param dataType DataType # Data type to scan for.
----@param selector Selector # Comparison predicate table.
----@return EntryList
-function Region:scan(dataType, selector) end
 
 -- Scans the process memory for values matching the data type and selector.
 ---@param dataType DataType # Data type to scan for ("u8", "i32", "f64", etc.).
@@ -176,17 +179,27 @@ function Region:scan(dataType, selector) end
 ---@return EntryList
 function Process:scan(dataType, selector, filter) end
 
+-- Scans this region for memory values matching the data type and selector.
+---@param dataType DataType # Data type to scan for.
+---@param selector Selector # Comparison predicate table.
+---@return EntryList
+function Region:scan(dataType, selector) end
+
 -- Returns a Process for the current process. No root needed, useful when loaded via require("lumem").
 ---@return Process
 function Lumem:self() end
 
--- Returns the group ID of the process, or nil if unavailable.
+-- Returns the parent process ID, or nil if unavailable.
 ---@return integer?
-function Process:getGid() end
+function Process:get_parent_pid() end
 
--- Returns the end address of this region.
+-- Returns the user ID that owns the process, or nil if unavailable.
+---@return integer?
+function Process:get_uid() end
+
+-- Returns the start address of this region.
 ---@return integer
-function Region:getEnd() end
+function Region:get_start() end
 
 -- Returns an iterator compatible with Lua for..in syntax.
 ---@return function
@@ -199,9 +212,9 @@ function EntryList:iter() end
 ---@return ProcList
 function Lumem:scan(filter) end
 
--- Returns the inode of the mapped file, or 0 if anonymous.
+-- Returns the file offset of this region.
 ---@return integer
-function Region:getInode() end
+function Region:get_offset() end
 
 -- Returns the memory regions for this process, optionally filtered by permissions.
 ---@param filter Permissions? # Optional permission filter string ("rwxp") or table of names.
@@ -220,10 +233,8 @@ function ProcList:get(index) end
 function ProcList:iter() end
 
 -- Creates a typed Entry at a process memory address for reading and writing.
----@param pid integer # Target process ID.
----@param address integer # Memory address.
----@param dataType DataType # Data type string ("u8", "i32", "f64", etc.).
+---@param config EntryConfig # Table with pid, address, type, and optional size for str.
 ---@return Entry
-function Lumem:entry(pid, address, dataType) end
+function Lumem:entry(config) end
 
 lumem = Lumem

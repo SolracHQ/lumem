@@ -1,24 +1,33 @@
-//! Scans a memory region for values matching a type and selector predicate.
+//! Memory scanning engine.
 //!
-//! Returns the matching entries for values that pass the selector in the
-//! given region. Supports both fixed-size types and aggregated type families.
+//! Scans a memory region for values matching a type and selector predicate.
 
 const std = @import("std");
-
-const Region = @import("../region/region.zig");
-const DataType = @import("../mem/types.zig").DataType;
-const Entry = @import("../mem/entry.zig").Entry;
-const Selector = @import("../mem/selector.zig").Selector;
-const Memory = @import("./memory.zig");
-
 const zua = @import("zua");
+
+const Region = @import("../region/region.zig").Region;
+const Memory = @import("memory.zig");
+const DataType = @import("types.zig").DataType;
+const Entry = @import("entry.zig").Entry;
+const Selector = @import("selector.zig").Selector;
 
 pub const Scanner = @This();
 
-/// Scans a memory region for values matching a type and selector predicate.
-pub fn scanRegion(ctx: *zua.Context, region: Region, dataType: DataType, selector: Selector) ![]Entry {
-    if (!region.perms.has(.read)) {
-        try ctx.failWithFmt("region at {x} is not readable", .{region.start});
+pub fn mapError(ctx: *zua.Context, comptime T: type, err: anyerror) !T {
+    return switch (err) {
+        error.PartialTransfer => ctx.failWithFmtTyped(T, "partial transfer", .{}),
+        error.InvalidAddress => ctx.failWithFmtTyped(T, "invalid address", .{}),
+        error.InvalidArgument => ctx.failWithFmtTyped(T, "invalid argument", .{}),
+        error.OutOfMemory => ctx.failWithFmtTyped(T, "out of memory", .{}),
+        error.PermissionDenied => ctx.failWithFmtTyped(T, "access denied", .{}),
+        error.NoSuchProcess => ctx.failWithFmtTyped(T, "no such process", .{}),
+        else => ctx.failWithFmtTyped(T, "unexpected error: {s}", .{@errorName(err)}),
+    };
+}
+
+pub fn scanRegion(ctx: *zua.Context, info: *const Region, dataType: DataType, selector: Selector) ![]Entry {
+    if (!info.perms.has(.read)) {
+        try ctx.failWithFmt("region at {x} is not readable", .{info.start});
     }
 
     var result = std.ArrayList(Entry).empty;
@@ -27,48 +36,100 @@ pub fn scanRegion(ctx: *zua.Context, region: Region, dataType: DataType, selecto
         .Aggregated => |agg| {
             const types = agg.types();
             for (types) |typeInfo| {
-                const entries = try scanRegion(ctx, region, .{ .Simple = typeInfo }, selector);
+                const entries = try scanRegion(ctx, info, .{ .Simple = typeInfo }, selector);
                 try result.appendSlice(ctx.arena(), entries);
             }
         },
         .Simple => |simple| {
             switch (simple) {
-                .u8 => try result.appendSlice(ctx.arena(), try lookForT(u8, ctx, region, selector)),
-                .u16 => try result.appendSlice(ctx.arena(), try lookForT(u16, ctx, region, selector)),
-                .u32 => try result.appendSlice(ctx.arena(), try lookForT(u32, ctx, region, selector)),
-                .u64 => try result.appendSlice(ctx.arena(), try lookForT(u64, ctx, region, selector)),
-                .i8 => try result.appendSlice(ctx.arena(), try lookForT(i8, ctx, region, selector)),
-                .i16 => try result.appendSlice(ctx.arena(), try lookForT(i16, ctx, region, selector)),
-                .i32 => try result.appendSlice(ctx.arena(), try lookForT(i32, ctx, region, selector)),
-                .i64 => try result.appendSlice(ctx.arena(), try lookForT(i64, ctx, region, selector)),
-                .f32 => try result.appendSlice(ctx.arena(), try lookForT(f32, ctx, region, selector)),
-                .f64 => try result.appendSlice(ctx.arena(), try lookForT(f64, ctx, region, selector)),
+                .u8 => try result.appendSlice(ctx.arena(), try lookFor(u8, ctx, info, selector)),
+                .u16 => try result.appendSlice(ctx.arena(), try lookFor(u16, ctx, info, selector)),
+                .u32 => try result.appendSlice(ctx.arena(), try lookFor(u32, ctx, info, selector)),
+                .u64 => try result.appendSlice(ctx.arena(), try lookFor(u64, ctx, info, selector)),
+                .i8 => try result.appendSlice(ctx.arena(), try lookFor(i8, ctx, info, selector)),
+                .i16 => try result.appendSlice(ctx.arena(), try lookFor(i16, ctx, info, selector)),
+                .i32 => try result.appendSlice(ctx.arena(), try lookFor(i32, ctx, info, selector)),
+                .i64 => try result.appendSlice(ctx.arena(), try lookFor(i64, ctx, info, selector)),
+                .f32 => try result.appendSlice(ctx.arena(), try lookFor(f32, ctx, info, selector)),
+                .f64 => try result.appendSlice(ctx.arena(), try lookFor(f64, ctx, info, selector)),
+                .str => try result.appendSlice(ctx.arena(), try lookForString(ctx, info, selector)),
             }
         },
     }
     return result.items;
 }
 
-fn lookForT(comptime T: type, ctx: *zua.Context, region: Region, selector: Selector) ![]Entry {
+fn lookFor(comptime T: type, ctx: *zua.Context, info: *const Region, selector: Selector) ![]Entry {
     var out = std.ArrayList(Entry).empty;
     var buffer: [1024 * 64 / @sizeOf(T)]T = undefined;
-    var cursor = alignTo(region.start, T);
-    while (cursor < alignTo(region.end, T)) {
-        const toRead = @min(buffer.len, region.end - cursor);
+    var cursor = alignTo(info.start, T);
+    while (cursor < alignTo(info.end, T)) {
+        const toRead = @min(buffer.len, info.end - cursor);
         const slice = buffer[0 .. toRead / @sizeOf(T)];
-        try Memory.readTyped(T, ctx, region.pid, cursor, slice);
+        Memory.readTyped(T, ctx, info.pid, cursor, slice) catch |err| return mapError(ctx, []Entry, err);
         for (slice, 0..) |value, idx| {
             if (try selector.matches(T, ctx, value, null)) {
                 try out.append(ctx.arena(), Entry{
                     .address = cursor + idx * @sizeOf(T),
                     .value = .from(T, value),
-                    .perms = region.perms,
-                    .pid = region.pid,
+                    .perms = info.perms,
+                    .pid = info.pid,
                 });
             }
         }
         cursor += @sizeOf(T) * slice.len;
     }
+    return out.items;
+}
+
+fn lookForString(ctx: *zua.Context, info: *const Region, selector: Selector) ![]Entry {
+    const max_len: usize = 80;
+    const target_len = selector.resolveTargetLen(ctx) catch max_len;
+    if (target_len > max_len) return ctx.failWithFmtTyped([]Entry, "string too long (max {d} bytes)", .{max_len});
+    if (target_len == 0) return &.{};
+
+    var out = std.ArrayList(Entry).empty;
+    var buf: [1024 * 64]u8 = undefined;
+    var overlap: [80]u8 = undefined;
+    var overlap_len: usize = 0;
+    var cursor = info.start;
+
+    while (cursor < info.end) {
+        const to_read = @min(buf.len, info.end - cursor);
+        Memory.readTyped(u8, ctx, info.pid, cursor, buf[0..to_read]) catch |err| return mapError(ctx, []Entry, err);
+
+        var window: []const u8 = undefined;
+        if (overlap_len > 0) {
+            var combined: [1024 * 64 + 80]u8 = undefined;
+            std.mem.copyForwards(u8, combined[0..overlap_len], overlap[0..overlap_len]);
+            std.mem.copyForwards(u8, combined[overlap_len..][0..to_read], buf[0..to_read]);
+            window = combined[0 .. overlap_len + to_read];
+        } else {
+            window = buf[0..to_read];
+        }
+
+        var pos: usize = 0;
+        while (pos + target_len <= window.len) : (pos += 1) {
+            const chunk = window[pos..][0..target_len];
+            if (try selector.matchesString(ctx, chunk, null)) {
+                const addr = cursor + pos - overlap_len;
+                const owned = try ctx.heap().dupe(u8, chunk);
+                try out.append(ctx.arena(), Entry{
+                    .address = addr,
+                    .value = Entry.Value{ .str = owned },
+                    .perms = info.perms,
+                    .pid = info.pid,
+                });
+            }
+        }
+
+        overlap_len = @min(target_len - 1, to_read);
+        if (overlap_len > 0) {
+            std.mem.copyForwards(u8, overlap[0..overlap_len], buf[to_read - overlap_len .. to_read]);
+        }
+        cursor += to_read;
+    }
+
     return out.items;
 }
 

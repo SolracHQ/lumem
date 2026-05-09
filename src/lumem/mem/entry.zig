@@ -12,12 +12,15 @@ const DataType = @import("../mem/types.zig").DataType;
 const SimpleType = @import("../mem/types.zig").SimpleType;
 const Memory = @import("../mem/memory.zig");
 const Selector = @import("../mem/selector.zig").Selector;
+const Display = @import("../display.zig");
 
 pub const Scanner = @import("scanner.zig");
 
 pub const Entry = @This();
 
 const methods = .{
+    .__gc = m_cleanup,
+    .__tostring = m_display,
     .set = zua.Native.new(set, .{}, .{
         .description = "Writes a new value to this entry's address in the target process.",
         .args = &.{
@@ -46,6 +49,7 @@ pub const Value = union(SimpleType) {
     i64: i64,
     f32: f32,
     f64: f64,
+    str: []u8,
 
     pub fn from(comptime T: type, value: T) Value {
         if (comptime T == u8) return Value{ .u8 = value };
@@ -59,6 +63,30 @@ pub const Value = union(SimpleType) {
         if (comptime T == f32) return Value{ .f32 = value };
         if (comptime T == f64) return Value{ .f64 = value };
         @compileError("unsupported type");
+    }
+
+    pub fn display(self: Value, arena: std.mem.Allocator) ![]const u8 {
+        var buf: [64]u8 = undefined;
+        const s = switch (self) {
+            .u8 => |v| try std.fmt.bufPrint(&buf, "{d}", .{v}),
+            .u16 => |v| try std.fmt.bufPrint(&buf, "{d}", .{v}),
+            .u32 => |v| try std.fmt.bufPrint(&buf, "{d}", .{v}),
+            .u64 => |v| try std.fmt.bufPrint(&buf, "{d}", .{v}),
+            .i8 => |v| try std.fmt.bufPrint(&buf, "{d}", .{v}),
+            .i16 => |v| try std.fmt.bufPrint(&buf, "{d}", .{v}),
+            .i32 => |v| try std.fmt.bufPrint(&buf, "{d}", .{v}),
+            .i64 => |v| try std.fmt.bufPrint(&buf, "{d}", .{v}),
+            .f32 => |v| try std.fmt.bufPrint(&buf, "{d}", .{v}),
+            .f64 => |v| try std.fmt.bufPrint(&buf, "{d}", .{v}),
+            .str => |v| try std.fmt.bufPrint(&buf, "\"{s}\"", .{v}),
+        };
+        return arena.dupe(u8, s);
+    }
+
+    pub fn deinit(self: *Value, heap: std.mem.Allocator) void {
+        if (self.* == .str) {
+            heap.free(self.str);
+        }
     }
 };
 
@@ -131,6 +159,11 @@ fn get(ctx: *zua.Context, self: *Entry) !zua.Decoder.Primitive {
             self.value = Value.from(f64, value);
             return .{ .float = @floatCast(value) };
         },
+        .str => {
+            const buf = self.value.str;
+            try Memory.readTyped(u8, ctx, self.pid, self.address, buf);
+            return .{ .string = try ctx.arena().dupeZ(u8, buf) };
+        },
     };
 }
 
@@ -147,30 +180,79 @@ pub fn set(ctx: *zua.Context, self: *Entry, value: zua.Decoder.Primitive) !void 
         .i64 => try setTyped(i64, ctx, self, value),
         .f32 => try setTyped(f32, ctx, self, value),
         .f64 => try setTyped(f64, ctx, self, value),
+        .str => {
+            const val = try zua.Decoder.decodeValue(ctx, value, []const u8);
+            if (val.len > self.value.str.len) {
+                return ctx.failWithFmt("string too long (max {d} bytes)", .{self.value.str.len});
+            }
+            if (!self.perms.has(.write)) {
+                return ctx.failWithFmt("entry at {x} is not writable", .{self.address});
+            }
+            try Memory.writeTyped(u8, ctx, self.pid, self.address, val);
+            const buf = @constCast(self.value.str);
+            @memcpy(buf[0..val.len], val);
+            self.value = Value{ .str = buf[0..val.len] };
+        },
     }
 }
 
 /// Tests whether the entry's current live value matches a selector.
-pub fn matches(self: *const Entry, ctx: *zua.Context, selector: Selector) !bool {
+fn readTypedCached(comptime T: type, ctx: *zua.Context, self: *Entry) !T {
+    const value = try readValue(T, ctx, self);
+    self.value = Value.from(T, value);
+    return value;
+}
+
+pub fn matches(self: *Entry, ctx: *zua.Context, selector: Selector) !bool {
     return switch (self.value) {
-        .u8 => |value| try selector.matches(u8, ctx, try readValue(u8, ctx, self), value),
-        .u16 => |value| try selector.matches(u16, ctx, try readValue(u16, ctx, self), value),
-        .u32 => |value| try selector.matches(u32, ctx, try readValue(u32, ctx, self), value),
-        .u64 => |value| try selector.matches(u64, ctx, try readValue(u64, ctx, self), value),
-        .i8 => |value| try selector.matches(i8, ctx, try readValue(i8, ctx, self), value),
-        .i16 => |value| try selector.matches(i16, ctx, try readValue(i16, ctx, self), value),
-        .i32 => |value| try selector.matches(i32, ctx, try readValue(i32, ctx, self), value),
-        .i64 => |value| try selector.matches(i64, ctx, try readValue(i64, ctx, self), value),
-        .f32 => |value| try selector.matches(f32, ctx, try readValue(f32, ctx, self), value),
-        .f64 => |value| try selector.matches(f64, ctx, try readValue(f64, ctx, self), value),
+        .u8 => |prev| try selector.matches(u8, ctx, try readTypedCached(u8, ctx, self), prev),
+        .u16 => |prev| try selector.matches(u16, ctx, try readTypedCached(u16, ctx, self), prev),
+        .u32 => |prev| try selector.matches(u32, ctx, try readTypedCached(u32, ctx, self), prev),
+        .u64 => |prev| try selector.matches(u64, ctx, try readTypedCached(u64, ctx, self), prev),
+        .i8 => |prev| try selector.matches(i8, ctx, try readTypedCached(i8, ctx, self), prev),
+        .i16 => |prev| try selector.matches(i16, ctx, try readTypedCached(i16, ctx, self), prev),
+        .i32 => |prev| try selector.matches(i32, ctx, try readTypedCached(i32, ctx, self), prev),
+        .i64 => |prev| try selector.matches(i64, ctx, try readTypedCached(i64, ctx, self), prev),
+        .f32 => |prev| try selector.matches(f32, ctx, try readTypedCached(f32, ctx, self), prev),
+        .f64 => |prev| try selector.matches(f64, ctx, try readTypedCached(f64, ctx, self), prev),
+        .str => |cached| {
+            const live = try readStringValue(ctx, self);
+            const result = try selector.matchesString(ctx, live, cached);
+            @memcpy(self.value.str, live);
+            return result;
+        },
     };
 }
 
+fn m_cleanup(ctx: *zua.Context, self: *Entry) void {
+    self.value.deinit(ctx.heap());
+}
 
-fn readValue(comptime T: type, ctx: *zua.Context, self: *const Entry) !T {
+fn m_display(ctx: *zua.Context, self: *Entry) ![]const u8 {
+    const addr_str = try std.fmt.allocPrint(ctx.arena(), "0x{x}", .{self.address});
+    const pid_str = try std.fmt.allocPrint(ctx.arena(), "{d}", .{self.pid});
+    const perms_str = try Permissions.display(ctx, self.perms);
+    const val_str = try self.value.display(ctx.arena());
+    return Display.formatTable(ctx, &.{
+        .{ .key = "address", .val = addr_str },
+        .{ .key = "pid", .val = pid_str },
+        .{ .key = "perms", .val = perms_str },
+        .{ .key = "value", .val = val_str },
+    });
+}
+
+
+pub fn readValue(comptime T: type, ctx: *zua.Context, self: *const Entry) !T {
     var buffer: [1]T = undefined;
     try Memory.readTyped(T, ctx, self.pid, self.address, &buffer);
     return buffer[0];
+}
+
+pub fn readStringValue(ctx: *zua.Context, self: *const Entry) ![]u8 {
+    const len = self.value.str.len;
+    const buf = try ctx.arena().alloc(u8, len);
+    try Memory.readTyped(u8, ctx, self.pid, self.address, buf);
+    return buf;
 }
 
 fn setTyped(comptime T: type, ctx: *zua.Context, self: *Entry, value: zua.Decoder.Primitive) !void {

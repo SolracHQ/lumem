@@ -69,11 +69,27 @@ fn deinit(ctx: *zua.Context, self: *List) void {
 
 
 /// Formats the list for Lua tostring().
+/// Formats the list for Lua tostring().
 fn display(ctx: *zua.Context, self: *List) ![]const u8 {
-    const fmt = "ProcList({d} processes)";
-    return std.fmt.allocPrint(ctx.arena(), fmt, .{self.processes.items.len}) catch ctx.failTyped([]const u8, "Out of memory");
+    var out = std.ArrayList(u8).empty;
+    var buf: [256]u8 = undefined;
+    const header = try std.fmt.bufPrint(&buf, "ProcList({d} processes)\nindex pid      name\n", .{self.processes.items.len});
+    try out.appendSlice(ctx.arena(), header);
+    const max_display = 20;
+    for (self.processes.items, 0..) |proc, idx| {
+        if (idx >= max_display) break;
+        const proc_ref = proc.get();
+        const row = try std.fmt.bufPrint(&buf, "{d:5} {d:8} {s}\n", .{ idx + 1, @as(u64, @abs(proc_ref.pid)), proc_ref.name });
+        try out.appendSlice(ctx.arena(), row);
+    }
+    if (self.processes.items.len > max_display) {
+        const tail = try std.fmt.bufPrint(&buf, "... {d} more\n", .{self.processes.items.len - max_display});
+        try out.appendSlice(ctx.arena(), tail);
+    }
+    return out.items;
 }
 
+/// Keeps only processes matching the given criteria, returns a new list.
 pub fn filter(ctx: *zua.Context, self: *List, _filter: ProcessFilter) !List {
     var result = std.ArrayList(Process).empty;
     errdefer result.deinit(ctx.arena());
@@ -87,6 +103,7 @@ pub fn filter(ctx: *zua.Context, self: *List, _filter: ProcessFilter) !List {
     return try init(ctx, result.items);
 }
 
+/// Scans all processes in the list for matching memory values.
 pub fn scan(ctx: *zua.Context, self: *List, dataType: DataType, selector: Selector, _filter: ?Region.Permissions) !EntryList {
     const region_filter = _filter orelse try Region.Permissions.fromString(ctx, "rw--");
 
@@ -98,7 +115,7 @@ pub fn scan(ctx: *zua.Context, self: *List, dataType: DataType, selector: Select
         defer for (regions) |*region| {
             Region.cleanup(ctx, region);
         };
-        for (regions) |region| {
+        for (regions) |*region| {
             const region_entries = try MemScanner.scanRegion(ctx, region, dataType, selector);
             try entries.appendSlice(ctx.arena(), region_entries);
         }

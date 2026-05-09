@@ -10,6 +10,7 @@ const DataType = @import("../mem/types.zig").DataType;
 const Selector = @import("../mem/selector.zig").Selector;
 const EntryList = @import("../mem/list.zig").List;
 const Scanner = @import("../mem/scanner.zig");
+const Display = @import("../display.zig");
 
 pub const Permissions = @import("perms.zig");
 
@@ -18,25 +19,25 @@ pub const Region = @This();
 const methods = .{
     .__gc = cleanup,
     .__tostring = display,
-    .getStart = zua.Native.new(getStart, .{}, .{
+    .get_start = zua.Native.new(getStart, .{}, .{
         .description = "Returns the start address of this region.",
     }),
-    .getEnd = zua.Native.new(getEnd, .{}, .{
+    .get_end = zua.Native.new(getEnd, .{}, .{
         .description = "Returns the end address of this region.",
     }),
-    .getSize = zua.Native.new(getSize, .{}, .{
+    .get_size = zua.Native.new(getSize, .{}, .{
         .description = "Returns the size of this region in bytes.",
     }),
-    .getOffset = zua.Native.new(getOffset, .{}, .{
+    .get_offset = zua.Native.new(getOffset, .{}, .{
         .description = "Returns the file offset of this region.",
     }),
-    .getInode = zua.Native.new(getInode, .{}, .{
+    .get_inode = zua.Native.new(getInode, .{}, .{
         .description = "Returns the inode of the mapped file, or 0 if anonymous.",
     }),
-    .getPerms = zua.Native.new(getPerms, .{}, .{
+    .get_perms = zua.Native.new(getPerms, .{}, .{
         .description = "Returns the permission flags of this region.",
     }),
-    .getPathname = zua.Native.new(getPathname, .{}, .{
+    .get_pathname = zua.Native.new(getPathname, .{}, .{
         .description = "Returns the mapped file pathname, or empty string if anonymous.",
     }),
     .scan = zua.Native.new(scan, .{}, .{
@@ -118,15 +119,27 @@ fn getPathname(self: *const Region) []const u8 {
 /// local entries = region:scan("u32", {eq = 0x12345678})
 /// ```
 fn scan(ctx: *zua.Context, self: *Region, dataType: DataType, selector: Selector) !EntryList {
-    const entries = try Scanner.scanRegion(ctx, self.*, dataType, selector);
+    const entries = try Scanner.scanRegion(ctx, self, dataType, selector);
     return try EntryList.init(ctx, entries);
 }
 
+/// Formats the region for Lua tostring().
 fn display(ctx: *zua.Context, self: *Region) ![]const u8 {
-    const pathname = if (self.pathname.len == 0) "(anonymous)" else self.pathname;
+    const start_str = try std.fmt.allocPrint(ctx.arena(), "0x{x}", .{self.start});
+    const end_str = try std.fmt.allocPrint(ctx.arena(), "0x{x}", .{self.end});
+    const size_str = try std.fmt.allocPrint(ctx.arena(), "{d}", .{self.end - self.start});
     const perms_str = try Permissions.display(ctx, self.perms);
-    const fmt = "region(0x{x}-0x{x}, perms={s}, path={s})";
-    return std.fmt.allocPrint(ctx.arena(), fmt, .{ self.start, self.end, perms_str, pathname }) catch ctx.failTyped([]const u8, "Out of memory");
+    const path_str = if (self.pathname.len == 0)
+        "nil"
+    else
+        try Display.quoted(ctx.arena(), self.pathname);
+    return Display.formatTable(ctx, &.{
+        .{ .key = "start", .val = start_str },
+        .{ .key = "end", .val = end_str },
+        .{ .key = "size", .val = size_str },
+        .{ .key = "perms", .val = perms_str },
+        .{ .key = "pathname", .val = path_str },
+    });
 }
 
 test {

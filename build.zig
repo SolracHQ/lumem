@@ -50,6 +50,20 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Generate Lua type stubs");
     docs_step.dependOn(&docs_cmd.step);
 
+    const target_exe = b.addExecutable(.{
+        .name = "target",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("example/target.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    target_exe.root_module.link_libc = true;
+
+    const run_target = b.step("target", "Run the example target process");
+    const run_target_cmd = b.addRunArtifact(target_exe);
+    run_target.dependOn(&run_target_cmd.step);
+
     const run_step = b.step("run", "Run the app");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);

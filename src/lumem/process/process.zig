@@ -15,6 +15,7 @@ const Entry = @import("../mem/entry.zig").Entry;
 const EntryList = @import("../mem/list.zig").List;
 const DataType = @import("../mem/types.zig").DataType;
 const Selector = @import("../mem/selector.zig").Selector;
+const Display = @import("../display.zig");
 
 pub const Process = @This();
 
@@ -34,16 +35,16 @@ cmdLine: []const u8,
 const methods = .{
     .__gc = cleanup,
     .__tostring = display,
-    .getParentPid = zua.Native.new(getParentPid, .{}, .{
+    .get_parent_pid = zua.Native.new(getParentPid, .{}, .{
         .description = "Returns the parent process ID, or nil if unavailable.",
     }),
-    .getUid = zua.Native.new(getUid, .{}, .{
+    .get_uid = zua.Native.new(getUid, .{}, .{
         .description = "Returns the user ID that owns the process, or nil if unavailable.",
     }),
-    .getGid = zua.Native.new(getGid, .{}, .{
+    .get_gid = zua.Native.new(getGid, .{}, .{
         .description = "Returns the group ID of the process, or nil if unavailable.",
     }),
-    .getCmdLine = zua.Native.new(getCmdLine, .{}, .{
+    .get_cmd_line = zua.Native.new(getCmdLine, .{}, .{
         .description = "Returns the full command line with null separators replaced by spaces.",
     }),
     .regions = zua.Native.new(regions, .{}, .{
@@ -74,7 +75,6 @@ pub fn cleanup(ctx: *zua.Context, self: *Process) void {
     ctx.heap().free(self.cmdLine);
 }
 
-
 /// Returns the process parent PID, or nil when unavailable.
 pub fn getParentPid(self: *const Process) ?std.posix.pid_t {
     return self.parentPid;
@@ -95,11 +95,13 @@ pub fn getCmdLine(self: *const Process) []const u8 {
     return self.cmdLine;
 }
 
+/// Returns the memory regions for this process, optionally filtered by permissions.
 pub fn regions(ctx: *zua.Context, self: *const Process, filter: ?Region.Permissions) !RegionList {
     const _regions = try RegionScanner.scan(ctx, self.pid, filter orelse try Region.Permissions.fromString(ctx, "rw--"));
     return try RegionList.init(ctx, _regions);
 }
 
+/// Scans the process memory for values matching the data type and selector.
 pub fn scan(ctx: *zua.Context, self: *const Process, dataType: DataType, selector: Selector, filter: ?Region.Permissions) !EntryList {
     const region_filter = filter orelse try Region.Permissions.fromString(ctx, "rw--");
     const _regions = try RegionScanner.scan(ctx, self.pid, region_filter);
@@ -110,7 +112,7 @@ pub fn scan(ctx: *zua.Context, self: *const Process, dataType: DataType, selecto
     var entries = std.ArrayList(Entry).empty;
     errdefer entries.deinit(ctx.arena());
 
-    for (_regions) |region| {
+    for (_regions) |*region| {
         const region_entries = try MemScanner.scanRegion(ctx, region, dataType, selector);
         try entries.appendSlice(ctx.arena(), region_entries);
     }
@@ -118,10 +120,31 @@ pub fn scan(ctx: *zua.Context, self: *const Process, dataType: DataType, selecto
     return try EntryList.init(ctx, entries.items);
 }
 
+/// Formats the process for Lua tostring().
 fn display(ctx: *zua.Context, self: *Process) ![]const u8 {
-    const fmt = "Process {{ pid: {d}, name: {s} }}";
-    const args = .{ self.pid, self.name };
-    return std.fmt.allocPrint(ctx.arena(), fmt, args) catch ctx.failTyped([]const u8, "Out of memory");
+    const pid_str = try std.fmt.allocPrint(ctx.arena(), "{d}", .{self.pid});
+    const name_str = try Display.quoted(ctx.arena(), self.name);
+    const cmd_str = try Display.quoted(ctx.arena(), Display.truncate(self.cmdLine, 80));
+    const ppid_str = if (self.parentPid) |pp|
+        try std.fmt.allocPrint(ctx.arena(), "{d}", .{pp})
+    else
+        "nil";
+    const uid_str = if (self.uid) |u|
+        try std.fmt.allocPrint(ctx.arena(), "{d}", .{u})
+    else
+        "nil";
+    const gid_str = if (self.gid) |g|
+        try std.fmt.allocPrint(ctx.arena(), "{d}", .{g})
+    else
+        "nil";
+    return Display.formatTable(ctx, &.{
+        .{ .key = "pid", .val = pid_str },
+        .{ .key = "name", .val = name_str },
+        .{ .key = "cmd_line", .val = cmd_str },
+        .{ .key = "parent_pid", .val = ppid_str },
+        .{ .key = "uid", .val = uid_str },
+        .{ .key = "gid", .val = gid_str },
+    });
 }
 
 

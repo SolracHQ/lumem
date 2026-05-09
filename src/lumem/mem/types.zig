@@ -13,7 +13,8 @@ pub const TypeInfo = struct {
     alignment: usize,
 };
 
-/// The 10 fixed-size scalar types supported for memory reads and writes.
+/// The 10 fixed-size scalar types supported for memory reads and writes,
+/// plus string for byte-granular matching.
 pub const SimpleType = enum {
     u8,
     u16,
@@ -25,6 +26,7 @@ pub const SimpleType = enum {
     i64,
     f32,
     f64,
+    str,
 
     pub fn typeInfo(self: SimpleType) TypeInfo {
         return switch (self) {
@@ -38,6 +40,7 @@ pub const SimpleType = enum {
             .i64 => .{ .ty = self, .size = @sizeOf(i64), .alignment = @alignOf(i64) },
             .f32 => .{ .ty = self, .size = @sizeOf(f32), .alignment = @alignOf(f32) },
             .f64 => .{ .ty = self, .size = @sizeOf(f64), .alignment = @alignOf(f64) },
+            .str => .{ .ty = self, .size = 0, .alignment = 1 },
         };
     }
 };

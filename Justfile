@@ -8,6 +8,9 @@ run *args:
     zig build
     sudo ./zig-out/bin/lumem {{args}}
 
+target:
+    zig build target
+
 docs:
     mkdir -p stubs && zig build docs > stubs/lumem.d.lua
 

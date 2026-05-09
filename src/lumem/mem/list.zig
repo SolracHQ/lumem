@@ -6,6 +6,7 @@ const zua = @import("zua");
 
 const Entry = @import("entry.zig");
 const Selector = @import("selector.zig").Selector;
+const SimpleType = @import("types.zig").SimpleType;
 
 pub const List = @This();
 
@@ -31,13 +32,11 @@ pub const ZUA_META = zua.Meta.List(List, getElements, methods, .{
     .description = "A collection of Entry objects returned by memory scans.",
 });
 
-
 entries: std.ArrayList(zua.Object(Entry)),
 
 fn getElements(self: *List) []zua.Object(Entry) {
     return self.entries.items;
 }
-
 
 /// Constructs a new EntryList from a slice of Entry values.
 pub fn init(ctx: *zua.Context, elements: []Entry) !List {
@@ -57,19 +56,81 @@ fn deinit(ctx: *zua.Context, self: *List) void {
     self.entries.deinit(ctx.heap());
 }
 
-
 /// Formats the list for Lua tostring().
 fn display(ctx: *zua.Context, self: *List) ![]const u8 {
-    const fmt = "EntryList({d} entries)";
-    return std.fmt.allocPrint(ctx.arena(), fmt, .{self.entries.items.len}) catch ctx.failTyped([]const u8, "Out of memory");
+    var out = std.ArrayList(u8).empty;
+    var buf: [256]u8 = undefined;
+
+    var type_counts = std.EnumMap(SimpleType, usize).initFullWithDefault(0, .{});
+    for (self.entries.items) |entry| {
+        const tag = std.meta.activeTag(entry.get().value);
+        type_counts.put(tag, (type_counts.get(tag) orelse 0) + 1);
+    }
+    var summary = std.ArrayList(u8).empty;
+    var first = true;
+    var iter = type_counts.iterator();
+    while (iter.next()) |kv| {
+        if (kv.value.* == 0) continue;
+        if (!first) try summary.appendSlice(ctx.arena(), ", ");
+        first = false;
+        const line = try std.fmt.bufPrint(buf[0..], "{s} {d}", .{ @tagName(kv.key), kv.value.* });
+        try summary.appendSlice(ctx.arena(), line);
+    }
+    try out.appendSlice(ctx.arena(), "Summary: ");
+    try out.appendSlice(ctx.arena(), summary.items);
+
+    const header = try std.fmt.bufPrint(buf[0..], "\nindex address            type live      cached\n", .{});
+    try out.appendSlice(ctx.arena(), header);
+
+    const max_display = 20;
+    for (self.entries.items, 0..) |entry, idx| {
+        if (idx >= max_display) break;
+        const entry_ref = entry.get();
+        const tag = std.meta.activeTag(entry_ref.value);
+        const type_name = @tagName(tag);
+        const cached_str = try entry_ref.value.display(ctx.arena());
+        const live_str = readLiveDisplay(ctx, entry_ref) catch "?";
+        const row = try std.fmt.bufPrint(buf[0..], "{d:5} 0x{x:0>16} {s:4} {s:9} {s:9}\n", .{ idx + 1, entry_ref.address, type_name, live_str, cached_str });
+        try out.appendSlice(ctx.arena(), row);
+    }
+
+    if (self.entries.items.len > max_display) {
+        const tail = try std.fmt.bufPrint(buf[0..], "... {d} more\n", .{self.entries.items.len - max_display});
+        try out.appendSlice(ctx.arena(), tail);
+    }
+
+    return out.items;
 }
 
+fn readLiveDisplay(ctx: *zua.Context, entry_ref: *const Entry) ![]const u8 {
+    const tag = std.meta.activeTag(entry_ref.value);
+    const val = switch (tag) {
+        .u8 => Entry.Value{ .u8 = try Entry.readValue(u8, ctx, entry_ref) },
+        .u16 => Entry.Value{ .u16 = try Entry.readValue(u16, ctx, entry_ref) },
+        .u32 => Entry.Value{ .u32 = try Entry.readValue(u32, ctx, entry_ref) },
+        .u64 => Entry.Value{ .u64 = try Entry.readValue(u64, ctx, entry_ref) },
+        .i8 => Entry.Value{ .i8 = try Entry.readValue(i8, ctx, entry_ref) },
+        .i16 => Entry.Value{ .i16 = try Entry.readValue(i16, ctx, entry_ref) },
+        .i32 => Entry.Value{ .i32 = try Entry.readValue(i32, ctx, entry_ref) },
+        .i64 => Entry.Value{ .i64 = try Entry.readValue(i64, ctx, entry_ref) },
+        .f32 => Entry.Value{ .f32 = try Entry.readValue(f32, ctx, entry_ref) },
+        .f64 => Entry.Value{ .f64 = try Entry.readValue(f64, ctx, entry_ref) },
+        .str => Entry.Value{ .str = try Entry.readStringValue(ctx, entry_ref) },
+    };
+    return val.display(ctx.arena());
+}
+
+/// Keeps only entries matching a selector, returns a new list.
 pub fn filter(ctx: *zua.Context, self: *List, selector: Selector) !List {
     var result = std.ArrayList(Entry).empty;
     errdefer result.deinit(ctx.arena());
 
     for (self.entries.items) |entry| {
-        if (try entry.get().matches(ctx, selector)) {
+        const is_match = entry.get().matches(ctx, selector) catch {
+            ctx.err = null;
+            continue;
+        };
+        if (is_match) {
             try result.append(ctx.arena(), entry.get().*);
         }
     }
@@ -77,9 +138,21 @@ pub fn filter(ctx: *zua.Context, self: *List, selector: Selector) !List {
     return try init(ctx, result.items);
 }
 
+/// Writes a value to every entry in the list. Continues on errors, reports a summary.
 pub fn set(ctx: *zua.Context, self: *List, value: zua.Decoder.Primitive) !void {
+    var failures: usize = 0;
     for (self.entries.items) |entry| {
-        try Entry.set(ctx, entry.get(), value);
+        Entry.set(ctx, entry.get(), value) catch {
+            ctx.err = null;
+            failures += 1;
+        };
+    }
+    if (failures > 0) {
+        return ctx.failWithFmt("wrote {d} of {d} entries ({d} failed)", .{
+            self.entries.items.len - failures,
+            self.entries.items.len,
+            failures,
+        });
     }
 }
 
