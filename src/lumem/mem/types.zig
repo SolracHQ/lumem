@@ -1,3 +1,9 @@
+//! Scalar type definitions and data type selectors for memory operations.
+//!
+//! Defines the 10 fixed-size scalar types (SimpleType), type families
+//! like "signed" or "number" (AggregatedType), and the DataType union
+//! that bridges both into a single Lua-facing type.
+
 const std = @import("std");
 const zua = @import("zua");
 
@@ -7,6 +13,7 @@ pub const TypeInfo = struct {
     alignment: usize,
 };
 
+/// The 10 fixed-size scalar types supported for memory reads and writes.
 pub const SimpleType = enum {
     U8,
     U16,
@@ -43,13 +50,9 @@ pub const AggregatedType = enum {
     float,
 
     pub const NumberTypes: [10]SimpleType = .{ .U8, .U16, .U32, .U64, .I8, .I16, .I32, .I64, .F32, .F64 };
-
     pub const IntegerTypes: [8]SimpleType = .{ .U8, .U16, .U32, .U64, .I8, .I16, .I32, .I64 };
-
     pub const SignedTypes: [4]SimpleType = .{ .I8, .I16, .I32, .I64 };
-
     pub const UnsignedTypes: [4]SimpleType = .{ .U8, .U16, .U32, .U64 };
-
     pub const FloatTypes: [2]SimpleType = .{ .F32, .F64 };
 
     const Self = @This();
@@ -69,7 +72,10 @@ pub const DataType = union(enum) {
     Simple: SimpleType,
     Aggregated: AggregatedType,
 
-    pub const ZUA_META = zua.Meta.Object(DataType, .{}).withDecode(decode);
+    pub const ZUA_META = zua.Meta.Table(DataType, .{}, .{
+        .name = "DataType",
+        .description = "A scalar or family type for memory operations.",
+    }).withDecode(decode);
 };
 
 fn decode(ctx: *zua.Context, value: zua.Decoder.Primitive) !?DataType {
@@ -81,7 +87,6 @@ fn decode(ctx: *zua.Context, value: zua.Decoder.Primitive) !?DataType {
 }
 
 fn fromString(str: []const u8, ctx: *zua.Context) !DataType {
-    // Simple types
     if (std.mem.eql(u8, str, "u8")) return DataType{ .Simple = .U8 };
     if (std.mem.eql(u8, str, "u16")) return DataType{ .Simple = .U16 };
     if (std.mem.eql(u8, str, "u32")) return DataType{ .Simple = .U32 };
@@ -92,7 +97,6 @@ fn fromString(str: []const u8, ctx: *zua.Context) !DataType {
     if (std.mem.eql(u8, str, "i64")) return DataType{ .Simple = .I64 };
     if (std.mem.eql(u8, str, "f32")) return DataType{ .Simple = .F32 };
     if (std.mem.eql(u8, str, "f64")) return DataType{ .Simple = .F64 };
-    // Aggregated types
     if (std.mem.eql(u8, str, "number")) return DataType{ .Aggregated = .number };
     if (std.mem.eql(u8, str, "integer")) return DataType{ .Aggregated = .integer };
     if (std.mem.eql(u8, str, "signed")) return DataType{ .Aggregated = .signed };
@@ -101,4 +105,8 @@ fn fromString(str: []const u8, ctx: *zua.Context) !DataType {
     if (std.mem.eql(u8, str, "uint")) return DataType{ .Aggregated = .unsigned };
     if (std.mem.eql(u8, str, "float")) return DataType{ .Aggregated = .float };
     return ctx.failWithFmtTyped(DataType, "invalid data type: {s}", .{str});
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }

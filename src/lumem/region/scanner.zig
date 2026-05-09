@@ -1,7 +1,7 @@
-//! Scanner enumerates `/proc/<pid>/maps` and builds owned `Region` values.
+//! Reads and parses memory region maps for a process.
 //!
-//! This module is used by `Process:regions()` to expose a process's memory
-//! map to Lua consumers.
+//! Returns a list of mapped regions with address bounds, permissions,
+//! and pathnames. Used by Process:regions().
 
 pub const Scanner = @This();
 

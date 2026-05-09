@@ -2,27 +2,31 @@
 //! It is returned from `lumem:scan()` and supports Lua indexing,
 //! length queries, and string formatting.
 
-pub const List = @This();
-
 const std = @import("std");
 const zua = @import("zua");
 
-const Process = @import("proc.zig");
+const Process = @import("process.zig");
 const ProcessFilter = @import("filter.zig").Filter;
 const Region = @import("../region/region.zig");
 const RegionScanner = @import("../region/scanner.zig");
 const MemScanner = @import("../mem/scanner.zig");
 const Entry = @import("../mem/entry.zig");
 const EntryList = @import("../mem/list.zig").List;
-const DataType = @import("../mem/data_type.zig").DataType;
-const Selector = @import("../mem/filter.zig").Selector;
+const DataType = @import("../mem/types.zig").DataType;
+const Selector = @import("../mem/selector.zig").Selector;
+
+pub const List = @This();
 
 pub const ZUA_META = zua.Meta.List(List, getElements, .{
     .__gc = deinit,
     .__tostring = display,
     .filter = filter,
     .scan = scan,
+}, .{
+    .name = "ProcList",
+    .description = "A collection of Process objects returned by lumem:scan().",
 });
+
 
 processes: std.ArrayList(zua.Object(Process)),
 
@@ -30,7 +34,8 @@ fn getElements(self: *List) []zua.Object(Process) {
     return self.processes.items;
 }
 
-/// Constructs a new `ProcList` from a slice of process values.
+
+/// Constructs a new ProcList from a slice of process values.
 pub fn init(ctx: *zua.Context, elements: []Process) !List {
     var list = List{
         .processes = std.ArrayList(zua.Object(Process)).empty,
@@ -41,7 +46,15 @@ pub fn init(ctx: *zua.Context, elements: []Process) !List {
     return list;
 }
 
-/// Formats the list for Lua `tostring()`.
+fn deinit(ctx: *zua.Context, self: *List) void {
+    for (self.processes.items) |proc| {
+        proc.release();
+    }
+    self.processes.deinit(ctx.heap());
+}
+
+
+/// Formats the list for Lua tostring().
 fn display(ctx: *zua.Context, self: *List) ![]const u8 {
     const fmt = "ProcList({d} processes)";
     return std.fmt.allocPrint(ctx.arena(), fmt, .{self.processes.items.len}) catch ctx.failTyped([]const u8, "Out of memory");
@@ -60,7 +73,7 @@ pub fn filter(ctx: *zua.Context, self: *List, _filter: ProcessFilter) !List {
     return try init(ctx, result.items);
 }
 
-pub fn scan(ctx: *zua.Context, self: *List, dataType: DataType, selector: Selector, _filter: ?Region.Permissions) !EntryList.List {
+pub fn scan(ctx: *zua.Context, self: *List, dataType: DataType, selector: Selector, _filter: ?Region.Permissions) !EntryList {
     const region_filter = _filter orelse try Region.Permissions.fromString(ctx, "rw--");
 
     var entries = std.ArrayList(Entry).empty;
@@ -80,10 +93,6 @@ pub fn scan(ctx: *zua.Context, self: *List, dataType: DataType, selector: Select
     return try EntryList.init(ctx, entries.items);
 }
 
-/// Frees the `ProcList` and its owned process objects when Lua garbage-collects it.
-fn deinit(ctx: *zua.Context, self: *List) void {
-    for (self.processes.items) |proc| {
-        proc.release();
-    }
-    self.processes.deinit(ctx.heap());
+test {
+    std.testing.refAllDecls(@This());
 }

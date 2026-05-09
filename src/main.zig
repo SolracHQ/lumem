@@ -8,13 +8,10 @@ pub fn main(init: std.process.Init) !void {
     const state = try zua.State.init(init.gpa, init.io);
     defer state.deinit();
 
-    const globals = state.globals();
-    defer globals.release();
-
     var context = zua.Context.init(state);
     defer context.deinit();
 
-    globals.set(&context, "lumem", Lumem{});
+    try state.addGlobals(&context, .{ .lumem = Lumem{} });
 
     const args = try init.minimal.args.toSlice(state.allocator);
     defer state.allocator.free(args);

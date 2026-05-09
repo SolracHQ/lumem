@@ -1,20 +1,15 @@
-//! Lumem is the root scripting object exposed to Lua as the global `lumem`.
+//! Lumem is the root scripting object exposed to Lua as the global lumem.
 //! It provides access to live process enumeration and other host-side utilities
 //! for scripts and the interactive REPL.
 
 const std = @import("std");
 const zua = @import("zua");
 const Meta = zua.Meta;
-const Process = @import("proc/proc.zig");
-const DataType = @import("mem/data_type.zig").DataType;
-const Ops = @import("mem/ops.zig");
+const Process = @import("process/process.zig");
+const DataType = @import("mem/types.zig").DataType;
+const Memory = @import("mem/memory.zig");
 
-/// The top-level `lumem` object available in Lua.
-///
-/// Example:
-/// ```lua
-/// local processes = lumem:scan({ name = "target" })
-/// ```
+/// The top-level lumem object available in Lua.
 const Lumem = @This();
 
 pub const ZUA_META = Meta.Object(Lumem, .{
@@ -22,20 +17,16 @@ pub const ZUA_META = Meta.Object(Lumem, .{
     .scan = scan,
     .get = get,
     .set = set,
+}, .{
+    .name = "Lumem",
+    .description = "The root scripting object for process memory inspection.",
 });
 
-/// Scans live processes and returns a `Process.List` wrapper.
-///
-/// The optional `filter` argument may include fields such as `pid`, `uid`,
-/// `name`, and `cmdLine` to limit the returned processes.
-///
-/// Lua usage:
-/// ```lua
-/// local processes = lumem:scan({ name = "target" })
-/// ```
+
+/// Scans live processes and returns a Process.List wrapper.
 fn scan(ctx: *zua.Context, _: *Lumem, filter: ?Process.Filter) !Process.List {
     const _filter = filter orelse Process.Filter{};
-    const procs = try Process.Scanner.scan(ctx, &_filter);
+    const procs = try Process.scanAll(ctx, &_filter);
     return try Process.List.init(ctx, procs);
 }
 
@@ -75,9 +66,26 @@ fn set(ctx: *zua.Context, _: *Lumem, pid: std.posix.pid_t, address: usize, dataT
     }
 }
 
+fn display(ctx: *zua.Context, _: *Lumem) ![]const u8 {
+    const text = "lumem: scriptable process memory inspector.\n" ++
+        "Example:\n" ++
+        "  processes = lumem:scan({name = \"target\"})\n" ++
+        "  p = processes[1]\n" ++
+        "  regions = p:regions(\"rw\")\n" ++
+        "  entries = regions[1]:scan(\"u32\", {eq = 0})\n" ++
+        "  value = lumem:get(pid, address, \"u32\")\n" ++
+        "  lumem:set(pid, address, \"u32\", 33)\n" ++
+        "You could also use raw memory operations without scanning:\n" ++
+        "  value = lumem:get(pid, address, \"u32\")\n" ++
+        "  lumem:set(pid, address, \"u32\", 33)\n" ++
+        "Use tostring(lumem) to show this help again.";
+    return std.fmt.allocPrint(ctx.arena(), "{s}", .{text}) catch ctx.failTyped([]const u8, "Out of memory");
+}
+
+
 fn readTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, address: usize) !zua.Decoder.Primitive {
     var bytes: [1]T = undefined;
-    try Ops.readTyped(T, ctx, pid, address, &bytes);
+    try Memory.readTyped(T, ctx, pid, address, &bytes);
     return switch (T) {
         u8, u16, u32, i8, i16, i32, i64 => .{ .integer = @intCast(bytes[0]) },
         u64 => blk: {
@@ -95,21 +103,9 @@ fn readTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, address:
 
 fn writeTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, address: usize, value: zua.Mapper.Primitive) !void {
     const bytes: [1]T = .{try zua.Decoder.decodeValue(ctx, value, T)};
-    try Ops.writeTyped(T, ctx, pid, address, &bytes);
+    try Memory.writeTyped(T, ctx, pid, address, &bytes);
 }
 
-fn display(ctx: *zua.Context, _: *Lumem) ![]const u8 {
-    const text = "lumem: scriptable process memory inspector.\n" ++
-        "Example:\n" ++
-        "  processes = lumem:scan({name = \"target\"})\n" ++
-        "  p = processes[1]\n" ++
-        "  regions = p:regions(\"rw\")\n" ++
-        "  entries = regions[1]:scan(\"u32\", {eq = 0})\n" ++
-        "  value = lumem:get(pid, address, \"u32\")\n" ++
-        "  lumem:set(pid, address, \"u32\", 33)\n" ++
-        "You could also use raw memory operations without scanning:\n" ++
-        "  value = lumem:get(pid, address, \"u32\")\n" ++
-        "  lumem:set(pid, address, \"u32\", 33)\n" ++
-        "Use tostring(lumem) to show this help again.";
-    return std.fmt.allocPrint(ctx.arena(), "{s}", .{text}) catch ctx.failTyped([]const u8, "Out of memory");
+test {
+    std.testing.refAllDecls(@This());
 }

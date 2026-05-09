@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0
+
+### Changed
+
+- Updated zua dependency from 0.8.0 to 0.13.0
+- Source files reorganized: proc/ renamed to process/, mem files renamed
+- Merged process scanner into process.zig
+- Updated ZUA_META blocks to match zua 0.13 API
+
 ## 0.1.0
 
 Rebuilt the API from the ground up using Zua for Lua binding and REPL support.

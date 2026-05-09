@@ -1,3 +1,9 @@
+//! Reads and writes memory in a target process.
+//!
+//! Takes a type, pid, address, and buffer. Returns bytes read or written.
+//! The target process must be accessible (same user or root).
+//! Caller is responsible for ensuring the address range is valid.
+
 const std = @import("std");
 const linux = std.os.linux;
 
@@ -6,7 +12,7 @@ const iovec_const = std.posix.iovec_const;
 
 const zua = @import("zua");
 
-/// Reads an arbitrary byte range from another process into `buffer`.
+/// Reads typed values from a process's memory at the given address.
 pub fn readTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, address: usize, buffer: []T) !void {
     if (buffer.len == 0) return;
 
@@ -21,7 +27,7 @@ pub fn readTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, addr
     try expectFullTransfer(ctx, linux.process_vm_readv(pid, &local, &remote, 0), buffer.len * @sizeOf(T));
 }
 
-/// Writes an arbitrary byte range into another process.
+/// Writes typed values into a process's memory at the given address.
 pub fn writeTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, address: usize, bytes: []const T) !void {
     if (bytes.len == 0) return;
 
@@ -50,4 +56,8 @@ fn expectFullTransfer(ctx: *zua.Context, result: usize, expected_len: usize) !vo
         .SRCH => return ctx.failWithFmt("no such process: {x}", .{result}),
         else => return ctx.failWithFmt("unexpected error: {x}", .{result}),
     }
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }

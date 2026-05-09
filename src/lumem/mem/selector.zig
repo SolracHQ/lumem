@@ -1,9 +1,17 @@
+//! Selection predicates for filtering memory scan results.
+//!
+//! A Selector is a tagged union that describes which memory values to
+//! include in a scan result.
+
 const std = @import("std");
 const zua = @import("zua");
 
 pub const Selector = union(enum) {
     pub const ZUA_META = zua.Meta.Table(Selector, .{
         .__gc = deinit,
+    }, .{
+        .name = "Selector",
+        .description = "A comparison predicate for filtering memory scan results.",
     }).withDecode(decode);
 
     eq: zua.Decoder.Primitive,
@@ -14,7 +22,10 @@ pub const Selector = union(enum) {
     ne: zua.Decoder.Primitive,
     range: []zua.Decoder.Primitive,
     change: enum {
-        pub const ZUA_META = zua.Meta.strEnum(@This(), .{});
+        pub const ZUA_META = zua.Meta.strEnum(@This(), .{}, .{
+            .name = "ChangeType",
+            .description = "Describes how a value changed since the last scan.",
+        });
         increase,
         decrease,
         none,
@@ -54,7 +65,7 @@ pub const Selector = union(enum) {
                     }
                     return .{ .range = range };
                 }
-                return null; // I only need to custom the function path to take ownership, so leave the rest to normal path.
+                return null;
             },
             else => return ctx.failTyped(?Selector, "expected table for Selector"),
         }
@@ -66,3 +77,7 @@ pub const Selector = union(enum) {
         }
     }
 };
+
+test {
+    std.testing.refAllDecls(@This());
+}

@@ -1,20 +1,22 @@
-pub const Entry = @This();
+//! A typed memory value at a fixed address in a process.
+//!
+//! Entry represents a single memory location found by a scan. It stores
+//! the cached value, address, permissions, and owning process PID.
+//! Entries can be re-read and written back through Lua.
+
+const std = @import("std");
+const zua = @import("zua");
 
 const Permissions = @import("../region/perms.zig").Permissions;
-const DataType = @import("../mem/data_type.zig").DataType;
-const SimpleType = @import("../mem/data_type.zig").SimpleType;
-const Ops = @import("../mem/ops.zig");
-const Selector = @import("../mem/filter.zig").Selector;
-
-const zua = @import("zua");
-const std = @import("std");
+const DataType = @import("../mem/types.zig").DataType;
+const SimpleType = @import("../mem/types.zig").SimpleType;
+const Memory = @import("../mem/memory.zig");
+const Selector = @import("../mem/selector.zig").Selector;
 
 pub const Scanner = @import("scanner.zig");
 
-pub const ZUA_META = zua.Meta.Object(Entry, .{
-    .set = set,
-    .get = get,
-});
+pub const Entry = @This();
+
 
 pub const Value = union(SimpleType) {
     U8: u8,
@@ -43,47 +45,26 @@ pub const Value = union(SimpleType) {
     }
 };
 
+pub const ZUA_META = zua.Meta.Object(Entry, .{
+    .set = set,
+    .get = get,
+}, .{
+    .name = "Entry",
+    .description = "A typed memory value at a fixed address.",
+});
+
+
+/// PID of the process this entry belongs to.
 pid: std.posix.pid_t,
+/// Memory permissions at this address.
 perms: Permissions,
+/// Virtual address of this entry in the target process.
 address: usize,
+/// Cached value at this address (typed according to the scan).
 value: Value,
 
-pub fn set(ctx: *zua.Context, self: *Entry, value: zua.Decoder.Primitive) !void {
-    switch (self.value) {
-        .U8 => try setTyped(u8, ctx, self, value),
-        .U16 => try setTyped(u16, ctx, self, value),
-        .U32 => try setTyped(u32, ctx, self, value),
-        .U64 => try setTyped(u64, ctx, self, value),
-        .I8 => try setTyped(i8, ctx, self, value),
-        .I16 => try setTyped(i16, ctx, self, value),
-        .I32 => try setTyped(i32, ctx, self, value),
-        .I64 => try setTyped(i64, ctx, self, value),
-        .F32 => try setTyped(f32, ctx, self, value),
-        .F64 => try setTyped(f64, ctx, self, value),
-    }
-}
 
-fn readValue(comptime T: type, ctx: *zua.Context, self: *const Entry) !T {
-    var buffer: [1]T = undefined;
-    try Ops.readTyped(T, ctx, self.pid, self.address, &buffer);
-    return buffer[0];
-}
-
-pub fn matches(self: *const Entry, ctx: *zua.Context, selector: Selector) !bool {
-    return switch (self.value) {
-        .U8 => |value| try selector.matches(u8, ctx, try readValue(u8, ctx, self), value),
-        .U16 => |value| try selector.matches(u16, ctx, try readValue(u16, ctx, self), value),
-        .U32 => |value| try selector.matches(u32, ctx, try readValue(u32, ctx, self), value),
-        .U64 => |value| try selector.matches(u64, ctx, try readValue(u64, ctx, self), value),
-        .I8 => |value| try selector.matches(i8, ctx, try readValue(i8, ctx, self), value),
-        .I16 => |value| try selector.matches(i16, ctx, try readValue(i16, ctx, self), value),
-        .I32 => |value| try selector.matches(i32, ctx, try readValue(i32, ctx, self), value),
-        .I64 => |value| try selector.matches(i64, ctx, try readValue(i64, ctx, self), value),
-        .F32 => |value| try selector.matches(f32, ctx, try readValue(f32, ctx, self), value),
-        .F64 => |value| try selector.matches(f64, ctx, try readValue(f64, ctx, self), value),
-    };
-}
-
+/// Re-reads the entry's value from process memory and returns it.
 fn get(ctx: *zua.Context, self: *Entry) !zua.Decoder.Primitive {
     return switch (self.value) {
         .U8 => {
@@ -145,11 +126,54 @@ fn get(ctx: *zua.Context, self: *Entry) !zua.Decoder.Primitive {
     };
 }
 
+/// Writes a new value to the entry's address in the target process.
+pub fn set(ctx: *zua.Context, self: *Entry, value: zua.Decoder.Primitive) !void {
+    switch (self.value) {
+        .U8 => try setTyped(u8, ctx, self, value),
+        .U16 => try setTyped(u16, ctx, self, value),
+        .U32 => try setTyped(u32, ctx, self, value),
+        .U64 => try setTyped(u64, ctx, self, value),
+        .I8 => try setTyped(i8, ctx, self, value),
+        .I16 => try setTyped(i16, ctx, self, value),
+        .I32 => try setTyped(i32, ctx, self, value),
+        .I64 => try setTyped(i64, ctx, self, value),
+        .F32 => try setTyped(f32, ctx, self, value),
+        .F64 => try setTyped(f64, ctx, self, value),
+    }
+}
+
+/// Tests whether the entry's current live value matches a selector.
+pub fn matches(self: *const Entry, ctx: *zua.Context, selector: Selector) !bool {
+    return switch (self.value) {
+        .U8 => |value| try selector.matches(u8, ctx, try readValue(u8, ctx, self), value),
+        .U16 => |value| try selector.matches(u16, ctx, try readValue(u16, ctx, self), value),
+        .U32 => |value| try selector.matches(u32, ctx, try readValue(u32, ctx, self), value),
+        .U64 => |value| try selector.matches(u64, ctx, try readValue(u64, ctx, self), value),
+        .I8 => |value| try selector.matches(i8, ctx, try readValue(i8, ctx, self), value),
+        .I16 => |value| try selector.matches(i16, ctx, try readValue(i16, ctx, self), value),
+        .I32 => |value| try selector.matches(i32, ctx, try readValue(i32, ctx, self), value),
+        .I64 => |value| try selector.matches(i64, ctx, try readValue(i64, ctx, self), value),
+        .F32 => |value| try selector.matches(f32, ctx, try readValue(f32, ctx, self), value),
+        .F64 => |value| try selector.matches(f64, ctx, try readValue(f64, ctx, self), value),
+    };
+}
+
+
+fn readValue(comptime T: type, ctx: *zua.Context, self: *const Entry) !T {
+    var buffer: [1]T = undefined;
+    try Memory.readTyped(T, ctx, self.pid, self.address, &buffer);
+    return buffer[0];
+}
+
 fn setTyped(comptime T: type, ctx: *zua.Context, self: *Entry, value: zua.Decoder.Primitive) !void {
     const val: [1]T = .{try zua.Decoder.decodeValue(ctx, value, T)};
     if (!self.perms.has(.write)) {
         return ctx.failWithFmt("entry at {x} is not writable", .{self.address});
     }
-    try Ops.writeTyped(T, ctx, self.pid, self.address, &val);
+    try Memory.writeTyped(T, ctx, self.pid, self.address, &val);
     self.value = Value.from(T, val[0]);
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }

@@ -1,18 +1,21 @@
-pub const Scanner = @This();
+//! Scans a memory region for values matching a type and selector predicate.
+//!
+//! Returns the matching entries for values that pass the selector in the
+//! given region. Supports both fixed-size types and aggregated type families.
 
 const std = @import("std");
 
 const Region = @import("../region/region.zig");
-
-const Permissions = @import("../region/perms.zig").Permissions;
-const DataType = @import("../mem/data_type.zig").DataType;
+const DataType = @import("../mem/types.zig").DataType;
 const Entry = @import("../mem/entry.zig").Entry;
-const Selector = @import("../mem/filter.zig").Selector;
-
-const Ops = @import("./ops.zig");
+const Selector = @import("../mem/selector.zig").Selector;
+const Memory = @import("./memory.zig");
 
 const zua = @import("zua");
 
+pub const Scanner = @This();
+
+/// Scans a memory region for values matching a type and selector predicate.
 pub fn scanRegion(ctx: *zua.Context, region: Region, dataType: DataType, selector: Selector) ![]Entry {
     if (!region.perms.has(.read)) {
         try ctx.failWithFmt("region at {x} is not readable", .{region.start});
@@ -53,7 +56,7 @@ fn lookForT(comptime T: type, ctx: *zua.Context, region: Region, selector: Selec
     while (cursor < alignTo(region.end, T)) {
         const toRead = @min(buffer.len, region.end - cursor);
         const slice = buffer[0 .. toRead / @sizeOf(T)];
-        try Ops.readTyped(T, ctx, region.pid, cursor, slice);
+        try Memory.readTyped(T, ctx, region.pid, cursor, slice);
         for (slice, 0..) |value, idx| {
             if (try selector.matches(T, ctx, value, null)) {
                 try out.append(ctx.arena(), Entry{
@@ -74,4 +77,8 @@ fn alignTo(address: usize, comptime T: type) usize {
     const misalignment = address % alignment;
     if (misalignment == 0) return address;
     return address + (alignment - misalignment);
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }
