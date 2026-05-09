@@ -32,6 +32,24 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    const docs_exe = b.addExecutable(.{
+        .name = "lumem-docs",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/docs.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "lumem", .module = mod },
+            },
+        }),
+    });
+    docs_exe.root_module.link_libc = true;
+    docs_exe.root_module.addImport("zua", zua.module("zua"));
+
+    const docs_cmd = b.addRunArtifact(docs_exe);
+    const docs_step = b.step("docs", "Generate Lua type stubs");
+    docs_step.dependOn(&docs_cmd.step);
+
     const run_step = b.step("run", "Run the app");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);

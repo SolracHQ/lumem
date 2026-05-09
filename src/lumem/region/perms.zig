@@ -12,7 +12,7 @@ const Decoder = zua.Mapper.Decoder;
 /// Supports decoding from Lua values and helpers for matching required flags.
 pub const Permissions = @This();
 
-/// Region memory permission bits parsed from /proc/pid/maps.
+/// Individual memory permission flags.
 pub const Permission = enum(u8) {
     read = 1 << 0,
     write = 1 << 1,
@@ -42,7 +42,7 @@ pub fn hasAll(self: Permissions, required: Permissions) bool {
     return (self.bits & required.bits) == required.bits;
 }
 
-/// Formats permissions as a /proc/pid/maps-style 4-character string.
+/// Formats permissions as a 4-character string like "rwxp".
 pub fn display(ctx: *zua.Context, self: Permissions) ![]const u8 {
     var buf: [4]u8 = [_]u8{ '-', '-', '-', '-' };
     if (self.has(.read)) buf[0] = 'r';

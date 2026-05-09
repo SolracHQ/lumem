@@ -12,11 +12,19 @@ const Selector = @import("../mem/selector.zig").Selector;
 
 pub const List = @This();
 
-pub const ZUA_META = zua.Meta.List(List, getElements, .{
+const methods = .{
     .__gc = deinit,
     .__tostring = display,
-    .scan = scan,
-}, .{
+    .scan = zua.Native.new(scan, .{}, .{
+        .description = "Scans all regions in the list for matching memory values.",
+        .args = &.{
+            .{ .name = "dataType", .description = "Data type to scan for." },
+            .{ .name = "selector", .description = "Comparison predicate table." },
+        },
+    }),
+};
+
+pub const ZUA_META = zua.Meta.List(List, getElements, methods, .{
     .name = "RegionList",
     .description = "A collection of Region objects returned by process:regions().",
 });

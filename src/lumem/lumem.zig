@@ -1,109 +1,90 @@
-//! Lumem is the root scripting object exposed to Lua as the global lumem.
-//! It provides access to live process enumeration and other host-side utilities
-//! for scripts and the interactive REPL.
+//! Root scripting object exposed to Lua as the global lumem.
+//!
+//! Provides process enumeration, memory inspection via entry objects,
+//! and access to the current process through lumem:self().
 
 const std = @import("std");
 const zua = @import("zua");
 const Meta = zua.Meta;
 const Process = @import("process/process.zig");
 const DataType = @import("mem/types.zig").DataType;
-const Memory = @import("mem/memory.zig");
+const Entry = @import("mem/entry.zig").Entry;
+const Permissions = @import("region/perms.zig").Permissions;
 
 /// The top-level lumem object available in Lua.
 const Lumem = @This();
 
-pub const ZUA_META = Meta.Object(Lumem, .{
-    .__tostring = display,
-    .scan = scan,
-    .get = get,
-    .set = set,
-}, .{
+const methods = .{
+    .__tostring = m_display,
+    .self = zua.Native.new(m_self, .{}, .{
+        .description = "Returns a Process for the current process. No root needed, useful when loaded via require(\"lumem\").",
+    }),
+    .scan = zua.Native.new(m_scan, .{}, .{
+        .description = "Scans live processes and returns a ProcList matching the optional filter.",
+        .args = &.{
+            .{ .name = "filter", .description = "Optional filter with pid, uid, name, or cmdLine fields." },
+        },
+    }),
+    .entry = zua.Native.new(m_entry, .{}, .{
+        .description = "Creates a typed Entry at a process memory address for reading and writing.",
+        .args = &.{
+            .{ .name = "pid", .description = "Target process ID." },
+            .{ .name = "address", .description = "Memory address." },
+            .{ .name = "dataType", .description = "Data type string (\"u8\", \"i32\", \"f64\", etc.)." },
+        },
+    }),
+};
+
+pub const ZUA_META = Meta.Object(Lumem, methods, .{
     .name = "Lumem",
-    .description = "The root scripting object for process memory inspection.",
+    .description = "The root scripting object for process memory inspection. Provides scan, entry, and self.",
 });
 
-
-/// Scans live processes and returns a Process.List wrapper.
-fn scan(ctx: *zua.Context, _: *Lumem, filter: ?Process.Filter) !Process.List {
+fn m_scan(ctx: *zua.Context, _: *Lumem, filter: ?Process.Filter) !Process.List {
     const _filter = filter orelse Process.Filter{};
     const procs = try Process.scanAll(ctx, &_filter);
     return try Process.List.init(ctx, procs);
 }
 
-fn get(ctx: *zua.Context, _: *Lumem, pid: std.posix.pid_t, address: usize, dataType: DataType) !zua.Decoder.Primitive {
-    switch (dataType) {
-        .Simple => |simple| switch (simple) {
-            .U8 => return try readTyped(u8, ctx, pid, address),
-            .U16 => return try readTyped(u16, ctx, pid, address),
-            .U32 => return try readTyped(u32, ctx, pid, address),
-            .U64 => return try readTyped(u64, ctx, pid, address),
-            .I8 => return try readTyped(i8, ctx, pid, address),
-            .I16 => return try readTyped(i16, ctx, pid, address),
-            .I32 => return try readTyped(i32, ctx, pid, address),
-            .I64 => return try readTyped(i64, ctx, pid, address),
-            .F32 => return try readTyped(f32, ctx, pid, address),
-            .F64 => return try readTyped(f64, ctx, pid, address),
-        },
-        .Aggregated => return ctx.failTyped(zua.Decoder.Primitive, "cannot read aggregated data type"),
-    }
+fn m_self(ctx: *zua.Context, _: *Lumem) !Process {
+    return Process.getSelf(ctx);
 }
 
-fn set(ctx: *zua.Context, _: *Lumem, pid: std.posix.pid_t, address: usize, dataType: DataType, value: zua.Mapper.Primitive) !void {
-    switch (dataType) {
-        .Simple => |simple| switch (simple) {
-            .U8 => try writeTyped(u8, ctx, pid, address, value),
-            .U16 => try writeTyped(u16, ctx, pid, address, value),
-            .U32 => try writeTyped(u32, ctx, pid, address, value),
-            .U64 => try writeTyped(u64, ctx, pid, address, value),
-            .I8 => try writeTyped(i8, ctx, pid, address, value),
-            .I16 => try writeTyped(i16, ctx, pid, address, value),
-            .I32 => try writeTyped(i32, ctx, pid, address, value),
-            .I64 => try writeTyped(i64, ctx, pid, address, value),
-            .F32 => try writeTyped(f32, ctx, pid, address, value),
-            .F64 => try writeTyped(f64, ctx, pid, address, value),
+fn m_entry(ctx: *zua.Context, _: *Lumem, pid: std.posix.pid_t, address: usize, dataType: DataType) !Entry {
+    const simple = switch (dataType) {
+        .Simple => |s| s,
+        .Aggregated => return ctx.failTyped(Entry, "cannot create entry for aggregated data type"),
+    };
+    return Entry{
+        .pid = pid,
+        .address = address,
+        .perms = .{ .bits = @intFromEnum(Permissions.Permission.read) | @intFromEnum(Permissions.Permission.write) },
+        .value = switch (simple) {
+            .u8 => Entry.Value{ .u8 = 0 },
+            .u16 => Entry.Value{ .u16 = 0 },
+            .u32 => Entry.Value{ .u32 = 0 },
+            .u64 => Entry.Value{ .u64 = 0 },
+            .i8 => Entry.Value{ .i8 = 0 },
+            .i16 => Entry.Value{ .i16 = 0 },
+            .i32 => Entry.Value{ .i32 = 0 },
+            .i64 => Entry.Value{ .i64 = 0 },
+            .f32 => Entry.Value{ .f32 = 0 },
+            .f64 => Entry.Value{ .f64 = 0 },
         },
-        .Aggregated => try ctx.fail("cannot write aggregated data type"),
-    }
+    };
 }
 
-fn display(ctx: *zua.Context, _: *Lumem) ![]const u8 {
-    const text = "lumem: scriptable process memory inspector.\n" ++
+fn m_display(_: *zua.Context, _: *Lumem) []const u8 {
+    return "lumem: scriptable process memory inspector.\n" ++
         "Example:\n" ++
         "  processes = lumem:scan({name = \"target\"})\n" ++
         "  p = processes[1]\n" ++
         "  regions = p:regions(\"rw\")\n" ++
         "  entries = regions[1]:scan(\"u32\", {eq = 0})\n" ++
-        "  value = lumem:get(pid, address, \"u32\")\n" ++
-        "  lumem:set(pid, address, \"u32\", 33)\n" ++
-        "You could also use raw memory operations without scanning:\n" ++
-        "  value = lumem:get(pid, address, \"u32\")\n" ++
-        "  lumem:set(pid, address, \"u32\", 33)\n" ++
+        "  e = lumem:entry(pid, address, \"u32\")\n" ++
+        "  e:set(33)\n" ++
+        "  value = e:get()\n" ++
         "Use tostring(lumem) to show this help again.";
-    return std.fmt.allocPrint(ctx.arena(), "{s}", .{text}) catch ctx.failTyped([]const u8, "Out of memory");
-}
-
-
-fn readTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, address: usize) !zua.Decoder.Primitive {
-    var bytes: [1]T = undefined;
-    try Memory.readTyped(T, ctx, pid, address, &bytes);
-    return switch (T) {
-        u8, u16, u32, i8, i16, i32, i64 => .{ .integer = @intCast(bytes[0]) },
-        u64 => blk: {
-            const value = bytes[0];
-            if (std.math.cast(i64, value)) |int_value| {
-                break :blk .{ .integer = int_value };
-            }
-            break :blk .{ .float = @floatFromInt(value) };
-        },
-        f32 => .{ .float = @floatCast(bytes[0]) },
-        f64 => .{ .float = @floatCast(bytes[0]) },
-        else => @compileError("unsupported type"),
-    };
-}
-
-fn writeTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, address: usize, value: zua.Mapper.Primitive) !void {
-    const bytes: [1]T = .{try zua.Decoder.decodeValue(ctx, value, T)};
-    try Memory.writeTyped(T, ctx, pid, address, &bytes);
 }
 
 test {

@@ -11,8 +11,7 @@ const Region = @import("region.zig");
 
 const proc_maps_limit = 1024 * 1024;
 
-/// Reads `/proc/<pid>/maps`, optionally filters by permissions, and returns
-/// an owned slice of parsed `Region` values.
+/// Reads memory region maps for a process, optionally filtered by permissions.
 pub fn scan(ctx: *zua.Context, pid: std.posix.pid_t, filter: Region.Permissions) ![]Region {
     var proc_dir = std.Io.Dir.cwd().openDir(ctx.state.io, "/proc", .{ .iterate = true }) catch |err| {
         return ctx.failWithFmtTyped([]Region, "Failed to open /proc: {s}", .{@errorName(err)});
@@ -50,7 +49,7 @@ pub fn scan(ctx: *zua.Context, pid: std.posix.pid_t, filter: Region.Permissions)
     return regions.items;
 }
 
-/// Parses a single `/proc/<pid>/maps` line into a `Region` value.
+/// Parses a maps line into a Region value.
 fn parseLine(allocator: std.mem.Allocator, line: []const u8, pid: std.posix.pid_t) !Region {
     var cursor: usize = 0;
     const address_field = nextField(line, &cursor) orelse return error.InvalidLine;
@@ -82,7 +81,7 @@ fn parseLine(allocator: std.mem.Allocator, line: []const u8, pid: std.posix.pid_
     };
 }
 
-/// Parses a 4-character permissions field from `/proc/<pid>/maps`.
+/// Parses a 4-character permissions string into a Permissions value.
 fn parsePermissions(field: []const u8) !Region.Permissions {
     if (field.len != 4) return error.InvalidPermissions;
     var perms: Region.Permissions = .{ .bits = 0 };
@@ -103,7 +102,7 @@ fn parsePermissions(field: []const u8) !Region.Permissions {
     return perms;
 }
 
-/// Reads the next whitespace-delimited field from a `/proc/<pid>/maps` line.
+/// Reads the next whitespace-delimited field from a maps line.
 fn nextField(line: []const u8, cursor: *usize) ?[]const u8 {
     while (cursor.* < line.len and isWhitespace(line[cursor.*])) cursor.* += 1;
     if (cursor.* == line.len) return null;

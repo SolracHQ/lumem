@@ -31,16 +31,38 @@ name: []const u8,
 /// Full process command line.
 cmdLine: []const u8,
 
-pub const ZUA_META = zua.Meta.Object(Process, .{
+const methods = .{
     .__gc = cleanup,
     .__tostring = display,
-    .getParentPid = getParentPid,
-    .getUid = getUid,
-    .getGid = getGid,
-    .getCmdLine = getCmdLine,
-    .regions = regions,
-    .scan = scan,
-}, .{
+    .getParentPid = zua.Native.new(getParentPid, .{}, .{
+        .description = "Returns the parent process ID, or nil if unavailable.",
+    }),
+    .getUid = zua.Native.new(getUid, .{}, .{
+        .description = "Returns the user ID that owns the process, or nil if unavailable.",
+    }),
+    .getGid = zua.Native.new(getGid, .{}, .{
+        .description = "Returns the group ID of the process, or nil if unavailable.",
+    }),
+    .getCmdLine = zua.Native.new(getCmdLine, .{}, .{
+        .description = "Returns the full command line with null separators replaced by spaces.",
+    }),
+    .regions = zua.Native.new(regions, .{}, .{
+        .description = "Returns the memory regions for this process, optionally filtered by permissions.",
+        .args = &.{
+            .{ .name = "filter", .description = "Optional permission filter string (\"rwxp\") or table of names." },
+        },
+    }),
+    .scan = zua.Native.new(scan, .{}, .{
+        .description = "Scans the process memory for values matching the data type and selector.",
+        .args = &.{
+            .{ .name = "dataType", .description = "Data type to scan for (\"u8\", \"i32\", \"f64\", etc.)." },
+            .{ .name = "selector", .description = "Comparison predicate table." },
+            .{ .name = "filter", .description = "Optional permission filter." },
+        },
+    }),
+};
+
+pub const ZUA_META = zua.Meta.Object(Process, methods, .{
     .name = "Process",
     .description = "A system process with metadata and memory scanning capabilities.",
 });
@@ -151,6 +173,29 @@ pub fn scanAll(ctx: *zua.Context, filter: *const Filter) ![]Process {
         }
     }
     return processList.toOwnedSlice(ctx.arena());
+}
+
+/// Returns a Process for the current process. No root needed.
+/// Useful when loaded as a shared library via require("lumem").
+pub fn getSelf(ctx: *zua.Context) !Process {
+    var proc_dir = std.Io.Dir.cwd().openDir(ctx.state.io, "/proc", .{}) catch |err| {
+        return ctx.failWithFmtTyped(Process, "Failed to open /proc: {s}", .{@errorName(err)});
+    };
+    defer proc_dir.close(ctx.state.io);
+    var self_dir = try proc_dir.openDir(ctx.state.io, "self", .{});
+    defer self_dir.close(ctx.state.io);
+    const pid = std.os.linux.getpid();
+    const name = try readName(ctx, self_dir);
+    const cmdLine = try readCmdLine(ctx, self_dir);
+    const status = try parseStatus(ctx, self_dir);
+    return Process{
+        .parentPid = status.parentPid,
+        .pid = pid,
+        .uid = status.uid,
+        .gid = status.gid,
+        .name = name,
+        .cmdLine = cmdLine,
+    };
 }
 
 fn parsePid(text: []const u8) ?std.posix.pid_t {

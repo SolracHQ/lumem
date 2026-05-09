@@ -11,8 +11,7 @@ pub const Selector = union(enum) {
         .__gc = deinit,
     }, .{
         .name = "Selector",
-        .description = "A comparison predicate for filtering memory scan results.",
-    }).withDecode(decode);
+    }).withDecode(decode).withDocs(selectorDocs);
 
     eq: zua.Decoder.Primitive,
     gt: zua.Decoder.Primitive,
@@ -77,6 +76,59 @@ pub const Selector = union(enum) {
         }
     }
 };
+
+fn selectorDocs(self: *zua.Docs) !void {
+    const ChangeType = comptime blk: {
+        for (@typeInfo(Selector).@"union".fields) |f| {
+            if (std.mem.eql(u8, f.name, "change")) break :blk f.type;
+        }
+        @compileError("change field not found");
+    };
+    try self.add(ChangeType);
+
+    var alias = zua.Docs.Alias{
+        .name = try self.arena.allocator().dupe(u8, "Selector"),
+        .description = try self.arena.allocator().dupe(u8, "A comparison predicate for filtering memory scan results."),
+        .values = .empty,
+    };
+    try alias.values.append(self.arena.allocator(), .{
+        .type = try self.arena.allocator().dupe(u8, "number"),
+        .description = "Shorthand for { eq = x }.",
+    });
+    try alias.values.append(self.arena.allocator(), .{
+        .type = try self.arena.allocator().dupe(u8, "function"),
+        .description = "Shorthand for { custom = f }.",
+    });
+    try alias.values.append(self.arena.allocator(), .{
+        .type = try self.arena.allocator().dupe(u8, "{ eq: any }"),
+        .description = "Equal to the given value.",
+    });
+    try alias.values.append(self.arena.allocator(), .{
+        .type = try self.arena.allocator().dupe(u8, "{ gt: any }"),
+        .description = "Greater than the given value.",
+    });
+    try alias.values.append(self.arena.allocator(), .{
+        .type = try self.arena.allocator().dupe(u8, "{ lt: any }"),
+        .description = "Less than the given value.",
+    });
+    try alias.values.append(self.arena.allocator(), .{
+        .type = try self.arena.allocator().dupe(u8, "{ ne: any }"),
+        .description = "Not equal to the given value.",
+    });
+    try alias.values.append(self.arena.allocator(), .{
+        .type = try self.arena.allocator().dupe(u8, "{ range: any[] }"),
+        .description = "Inclusive range as { lo, hi }.",
+    });
+    try alias.values.append(self.arena.allocator(), .{
+        .type = try self.arena.allocator().dupe(u8, "{ change: ChangeType }"),
+        .description = "Change type: increase, decrease, none, any.",
+    });
+    try alias.values.append(self.arena.allocator(), .{
+        .type = try self.arena.allocator().dupe(u8, "{ custom: function }"),
+        .description = "Custom Lua function(value, prev_value) returning bool.",
+    });
+    try self.aliases.append(self.arena.allocator(), alias);
+}
 
 test {
     std.testing.refAllDecls(@This());

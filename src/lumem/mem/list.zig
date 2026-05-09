@@ -9,12 +9,24 @@ const Selector = @import("selector.zig").Selector;
 
 pub const List = @This();
 
-pub const ZUA_META = zua.Meta.List(List, getElements, .{
+const methods = .{
     .__gc = deinit,
     .__tostring = display,
-    .filter = filter,
-    .set = set,
-}, .{
+    .filter = zua.Native.new(filter, .{}, .{
+        .description = "Returns a new list with only entries matching a selector.",
+        .args = &.{
+            .{ .name = "selector", .description = "Comparison predicate table." },
+        },
+    }),
+    .set = zua.Native.new(set, .{}, .{
+        .description = "Writes a value to every entry in the list.",
+        .args = &.{
+            .{ .name = "value", .description = "Value to write to each entry's address." },
+        },
+    }),
+};
+
+pub const ZUA_META = zua.Meta.List(List, getElements, methods, .{
     .name = "EntryList",
     .description = "A collection of Entry objects returned by memory scans.",
 });

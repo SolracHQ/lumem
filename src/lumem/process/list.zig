@@ -17,12 +17,26 @@ const Selector = @import("../mem/selector.zig").Selector;
 
 pub const List = @This();
 
-pub const ZUA_META = zua.Meta.List(List, getElements, .{
+const methods = .{
     .__gc = deinit,
     .__tostring = display,
-    .filter = filter,
-    .scan = scan,
-}, .{
+    .filter = zua.Native.new(filter, .{}, .{
+        .description = "Returns a new list with only processes matching the given criteria.",
+        .args = &.{
+            .{ .name = "filter", .description = "Filter with pid, uid, name, or cmdLine fields." },
+        },
+    }),
+    .scan = zua.Native.new(scan, .{}, .{
+        .description = "Scans all processes in the list for matching memory values.",
+        .args = &.{
+            .{ .name = "dataType", .description = "Data type to scan for." },
+            .{ .name = "selector", .description = "Comparison predicate table." },
+            .{ .name = "filter", .description = "Optional permission filter." },
+        },
+    }),
+};
+
+pub const ZUA_META = zua.Meta.List(List, getElements, methods, .{
     .name = "ProcList",
     .description = "A collection of Process objects returned by lumem:scan().",
 });

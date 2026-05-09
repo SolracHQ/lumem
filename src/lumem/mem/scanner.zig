@@ -33,16 +33,16 @@ pub fn scanRegion(ctx: *zua.Context, region: Region, dataType: DataType, selecto
         },
         .Simple => |simple| {
             switch (simple) {
-                .U8 => try result.appendSlice(ctx.arena(), try lookForT(u8, ctx, region, selector)),
-                .U16 => try result.appendSlice(ctx.arena(), try lookForT(u16, ctx, region, selector)),
-                .U32 => try result.appendSlice(ctx.arena(), try lookForT(u32, ctx, region, selector)),
-                .U64 => try result.appendSlice(ctx.arena(), try lookForT(u64, ctx, region, selector)),
-                .I8 => try result.appendSlice(ctx.arena(), try lookForT(i8, ctx, region, selector)),
-                .I16 => try result.appendSlice(ctx.arena(), try lookForT(i16, ctx, region, selector)),
-                .I32 => try result.appendSlice(ctx.arena(), try lookForT(i32, ctx, region, selector)),
-                .I64 => try result.appendSlice(ctx.arena(), try lookForT(i64, ctx, region, selector)),
-                .F32 => try result.appendSlice(ctx.arena(), try lookForT(f32, ctx, region, selector)),
-                .F64 => try result.appendSlice(ctx.arena(), try lookForT(f64, ctx, region, selector)),
+                .u8 => try result.appendSlice(ctx.arena(), try lookForT(u8, ctx, region, selector)),
+                .u16 => try result.appendSlice(ctx.arena(), try lookForT(u16, ctx, region, selector)),
+                .u32 => try result.appendSlice(ctx.arena(), try lookForT(u32, ctx, region, selector)),
+                .u64 => try result.appendSlice(ctx.arena(), try lookForT(u64, ctx, region, selector)),
+                .i8 => try result.appendSlice(ctx.arena(), try lookForT(i8, ctx, region, selector)),
+                .i16 => try result.appendSlice(ctx.arena(), try lookForT(i16, ctx, region, selector)),
+                .i32 => try result.appendSlice(ctx.arena(), try lookForT(i32, ctx, region, selector)),
+                .i64 => try result.appendSlice(ctx.arena(), try lookForT(i64, ctx, region, selector)),
+                .f32 => try result.appendSlice(ctx.arena(), try lookForT(f32, ctx, region, selector)),
+                .f64 => try result.appendSlice(ctx.arena(), try lookForT(f64, ctx, region, selector)),
             }
         },
     }

@@ -15,18 +15,40 @@ pub const Permissions = @import("perms.zig");
 
 pub const Region = @This();
 
-pub const ZUA_META = zua.Meta.Object(Region, .{
+const methods = .{
     .__gc = cleanup,
     .__tostring = display,
-    .getStart = getStart,
-    .getEnd = getEnd,
-    .getSize = getSize,
-    .getOffset = getOffset,
-    .getInode = getInode,
-    .getPerms = getPerms,
-    .getPathname = getPathname,
-    .scan = scan,
-}, .{
+    .getStart = zua.Native.new(getStart, .{}, .{
+        .description = "Returns the start address of this region.",
+    }),
+    .getEnd = zua.Native.new(getEnd, .{}, .{
+        .description = "Returns the end address of this region.",
+    }),
+    .getSize = zua.Native.new(getSize, .{}, .{
+        .description = "Returns the size of this region in bytes.",
+    }),
+    .getOffset = zua.Native.new(getOffset, .{}, .{
+        .description = "Returns the file offset of this region.",
+    }),
+    .getInode = zua.Native.new(getInode, .{}, .{
+        .description = "Returns the inode of the mapped file, or 0 if anonymous.",
+    }),
+    .getPerms = zua.Native.new(getPerms, .{}, .{
+        .description = "Returns the permission flags of this region.",
+    }),
+    .getPathname = zua.Native.new(getPathname, .{}, .{
+        .description = "Returns the mapped file pathname, or empty string if anonymous.",
+    }),
+    .scan = zua.Native.new(scan, .{}, .{
+        .description = "Scans this region for memory values matching the data type and selector.",
+        .args = &.{
+            .{ .name = "dataType", .description = "Data type to scan for." },
+            .{ .name = "selector", .description = "Comparison predicate table." },
+        },
+    }),
+};
+
+pub const ZUA_META = zua.Meta.Object(Region, methods, .{
     .name = "Region",
     .description = "A mapped memory region with address bounds, permissions, and pathname.",
 });

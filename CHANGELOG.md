@@ -2,12 +2,25 @@
 
 ## 0.2.0
 
+### Breaking
+
+- `lumem:get()` and `lumem:set()` removed. Use `lumem:entry()` then `entry:get()` / `entry:set()` instead
+
+### Added
+
+- `lumem:self()` returns the current process
+- `lumem:entry(pid, address, dataType)` creates a typed entry for reading and writing
+- `zig build docs` generates Lua type stubs to stdout
+- `just docs` saves stubs to `stubs/lumem.d.lua`
+
 ### Changed
 
 - Updated zua dependency from 0.8.0 to 0.13.0
 - Source files reorganized: proc/ renamed to process/, mem files renamed
 - Merged process scanner into process.zig
 - Updated ZUA_META blocks to match zua 0.13 API
+- All Lua methods now include descriptions and argument documentation
+- SimpleType enum variants renamed to lowercase (U8 -> u8, etc.)
 
 ## 0.1.0
 
