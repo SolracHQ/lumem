@@ -1,4 +1,4 @@
-//! ProcList wraps an ordered collection of `Process` objects.
+//! ProcList wraps an ordered collection of Process objects.
 //! It is returned from `lumem:scan()` and supports Lua indexing,
 //! length queries, and string formatting.
 
@@ -21,10 +21,13 @@ const methods = .{
     .__gc = deinit,
     .__tostring = display,
     .filter = zua.Native.new(filter, .{}, .{
-        .description = "Returns a new list with only processes matching the given criteria.",
+        .description = "Keeps only processes matching the given criteria, removing the rest.",
         .args = &.{
             .{ .name = "filter", .description = "Filter with pid, uid, name, or cmdLine fields." },
         },
+    }),
+    .clone = zua.Native.new(clone, .{}, .{
+        .description = "Returns a new list with the same processes.",
     }),
     .scan = zua.Native.new(scan, .{}, .{
         .description = "Scans all processes in the list for matching memory values.",
@@ -41,13 +44,11 @@ pub const ZUA_META = zua.Meta.List(List, getElements, methods, .{
     .description = "A collection of Process objects returned by lumem:scan().",
 });
 
-
 processes: std.ArrayList(zua.Object(Process)),
 
 fn getElements(self: *List) []zua.Object(Process) {
     return self.processes.items;
 }
-
 
 /// Constructs a new ProcList from a slice of process values.
 pub fn init(ctx: *zua.Context, elements: []Process) !List {
@@ -67,8 +68,6 @@ fn deinit(ctx: *zua.Context, self: *List) void {
     self.processes.deinit(ctx.heap());
 }
 
-
-/// Formats the list for Lua tostring().
 /// Formats the list for Lua tostring().
 fn display(ctx: *zua.Context, self: *List) ![]const u8 {
     var out = std.ArrayList(u8).empty;
@@ -89,18 +88,32 @@ fn display(ctx: *zua.Context, self: *List) ![]const u8 {
     return out.items;
 }
 
-/// Keeps only processes matching the given criteria, returns a new list.
-pub fn filter(ctx: *zua.Context, self: *List, _filter: ProcessFilter) !List {
-    var result = std.ArrayList(Process).empty;
-    errdefer result.deinit(ctx.arena());
-
+/// Keeps only processes matching the given criteria, removing the rest.
+pub fn filter(ctx: *zua.Context, self: *List, _filter: ProcessFilter) !void {
+    var write_idx: usize = 0;
     for (self.processes.items) |proc| {
         if (_filter.matches(proc.get())) {
-            try result.append(ctx.arena(), proc.get().*);
+            self.processes.items[write_idx] = proc;
+            write_idx += 1;
+        } else {
+            proc.release();
         }
     }
+    self.processes.shrinkAndFree(ctx.heap(), write_idx);
+}
 
-    return try init(ctx, result.items);
+/// Returns a new list with copies of the same processes.
+pub fn clone(ctx: *zua.Context, self: *List) !List {
+    var out = std.ArrayList(zua.Object(Process)).empty;
+    errdefer out.deinit(ctx.heap());
+
+    for (self.processes.items) |proc| {
+        const owned = proc.owned();
+        errdefer owned.release();
+        try out.append(ctx.heap(), owned);
+    }
+
+    return List{ .processes = out };
 }
 
 /// Scans all processes in the list for matching memory values.

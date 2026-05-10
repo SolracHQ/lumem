@@ -14,6 +14,9 @@ target:
 docs:
     mkdir -p stubs && zig build docs > stubs/lumem.d.lua
 
+dylib:
+    zig build dylib && cp zig-out/lib/liblumem.so lumem.so
+
 test:
     zig build test
 

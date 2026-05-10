@@ -16,6 +16,9 @@ pub const List = @This();
 const methods = .{
     .__gc = deinit,
     .__tostring = display,
+    .clone = zua.Native.new(clone, .{}, .{
+        .description = "Returns a new list with the same regions.",
+    }),
     .scan = zua.Native.new(scan, .{}, .{
         .description = "Scans all regions in the list for matching memory values.",
         .args = &.{
@@ -90,6 +93,20 @@ pub fn scan(ctx: *zua.Context, self: *List, dataType: DataType, selector: Select
     }
 
     return try EntryList.init(ctx, entries.items);
+}
+
+/// Returns a new list with copies of the same regions.
+pub fn clone(ctx: *zua.Context, self: *List) !List {
+    var out = std.ArrayList(zua.Object(Region)).empty;
+    errdefer out.deinit(ctx.heap());
+
+    for (self.regions.items) |region| {
+        const owned = region.owned();
+        errdefer owned.release();
+        try out.append(ctx.heap(), owned);
+    }
+
+    return List{ .regions = out };
 }
 
 test {

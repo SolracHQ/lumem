@@ -5,6 +5,7 @@
 ### Breaking
 
 - `lumem:get()` and `lumem:set()` removed. Use `lumem:entry()` then `entry:get()` / `entry:set()` instead
+- `EntryList:filter()` and `ProcList:filter()` now modify in place instead of returning a new list
 - Renamed Lua methods to snake_case following the LuaRocks style guide
 
 ### Added
@@ -15,6 +16,8 @@
 - `just docs` saves stubs to `stubs/lumem.d.lua`
 - `example/target.zig` example target process for testing scans
 - `zig build target` builds and runs the example target
+- `zig build dylib` builds the shared library (liblumem.so) for use with require("lumem")
+- `just dylib` builds and copies to lumem.so
 
 ### Changed
 
@@ -30,6 +33,8 @@
 - Entry filter now updates cached value after reading, so display reflects current state
 - matches() signature changed from *const Entry to *Entry
 - Best-effort strategy on bulk methods: set() continues on errors and reports a summary, filter() skips entries that error
+- clone() added to ProcList, RegionList, and EntryList
+- EntryList supports + operator (__add) to merge two lists
 
 ## 0.1.0
 

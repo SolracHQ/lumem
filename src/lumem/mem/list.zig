@@ -14,16 +14,22 @@ const methods = .{
     .__gc = deinit,
     .__tostring = display,
     .filter = zua.Native.new(filter, .{}, .{
-        .description = "Returns a new list with only entries matching a selector.",
+        .description = "Keeps only entries matching a selector, removing the rest.",
         .args = &.{
             .{ .name = "selector", .description = "Comparison predicate table." },
         },
+    }),
+    .clone = zua.Native.new(clone, .{}, .{
+        .description = "Returns a new list with the same entries.",
     }),
     .set = zua.Native.new(set, .{}, .{
         .description = "Writes a value to every entry in the list.",
         .args = &.{
             .{ .name = "value", .description = "Value to write to each entry's address." },
         },
+    }),
+    .__add = zua.Native.new(m_add, .{}, .{
+        .description = "Merges two entry lists into a new one.",
     }),
 };
 
@@ -43,6 +49,10 @@ pub fn init(ctx: *zua.Context, elements: []Entry) !List {
     var list = List{
         .entries = std.ArrayList(zua.Object(Entry)).empty,
     };
+    errdefer {
+        for (list.entries.items) |e| e.release();
+        list.entries.deinit(ctx.heap());
+    }
     for (elements) |entry| {
         try list.entries.append(ctx.heap(), zua.Object(Entry).create(ctx.state, entry).takeOwnership());
     }
@@ -120,22 +130,37 @@ fn readLiveDisplay(ctx: *zua.Context, entry_ref: *const Entry) ![]const u8 {
     return val.display(ctx.arena());
 }
 
-/// Keeps only entries matching a selector, returns a new list.
-pub fn filter(ctx: *zua.Context, self: *List, selector: Selector) !List {
-    var result = std.ArrayList(Entry).empty;
-    errdefer result.deinit(ctx.arena());
-
+/// Keeps only entries matching a selector, removing the rest.
+pub fn filter(ctx: *zua.Context, self: *List, selector: Selector) !void {
+    var write_idx: usize = 0;
     for (self.entries.items) |entry| {
         const is_match = entry.get().matches(ctx, selector) catch {
             ctx.err = null;
+            entry.release();
             continue;
         };
         if (is_match) {
-            try result.append(ctx.arena(), entry.get().*);
+            self.entries.items[write_idx] = entry;
+            write_idx += 1;
+        } else {
+            entry.release();
         }
     }
+    self.entries.shrinkAndFree(ctx.heap(), write_idx);
+}
 
-    return try init(ctx, result.items);
+/// Returns a new list with copies of the same entries.
+pub fn clone(ctx: *zua.Context, self: *List) !List {
+    var out = std.ArrayList(zua.Object(Entry)).empty;
+    errdefer out.deinit(ctx.heap());
+
+    for (self.entries.items) |entry| {
+        const owned = entry.owned();
+        errdefer owned.release();
+        try out.append(ctx.heap(), owned);
+    }
+
+    return List{ .entries = out };
 }
 
 /// Writes a value to every entry in the list. Continues on errors, reports a summary.
@@ -154,6 +179,24 @@ pub fn set(ctx: *zua.Context, self: *List, value: zua.Decoder.Primitive) !void {
             failures,
         });
     }
+}
+
+fn m_add(ctx: *zua.Context, self: *List, other: *List) !List {
+    var out = std.ArrayList(zua.Object(Entry)).empty;
+    errdefer out.deinit(ctx.heap());
+
+    for (self.entries.items) |entry| {
+        const owned = entry.owned();
+        errdefer owned.release();
+        try out.append(ctx.heap(), owned);
+    }
+    for (other.entries.items) |entry| {
+        const owned = entry.owned();
+        errdefer owned.release();
+        try out.append(ctx.heap(), owned);
+    }
+
+    return List{ .entries = out };
 }
 
 test {

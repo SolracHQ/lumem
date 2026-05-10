@@ -19,6 +19,7 @@ local Entry = {}
 
 ---@class EntryList
 ---@operator len: integer
+---@operator add: EntryList
 -- A collection of Entry objects returned by memory scans.
 local EntryList = {}
 
@@ -109,18 +110,16 @@ function Process:get_gid() end
 ---@return Permissions
 function Region:get_perms() end
 
--- Returns a new list with only entries matching a selector.
+-- Keeps only entries matching a selector, removing the rest.
 ---@param selector Selector # Comparison predicate table.
----@return EntryList
 function EntryList:filter(selector) end
 
 -- Returns the end address of this region.
 ---@return integer
 function Region:get_end() end
 
--- Returns a new list with only processes matching the given criteria.
+-- Keeps only processes matching the given criteria, removing the rest.
 ---@param filter Filter # Filter with pid, uid, name, or cmdLine fields.
----@return ProcList
 function ProcList:filter(filter) end
 
 -- Scans all regions in the list for matching memory values.
@@ -128,6 +127,10 @@ function ProcList:filter(filter) end
 ---@param selector Selector # Comparison predicate table.
 ---@return EntryList
 function RegionList:scan(dataType, selector) end
+
+-- Returns a new list with the same processes.
+---@return ProcList
+function ProcList:clone() end
 
 -- Returns the inode of the mapped file, or 0 if anonymous.
 ---@return integer
@@ -172,6 +175,10 @@ function Entry:set(value) end
 ---@return integer?
 function RegionList:iter() end
 
+-- Returns a new list with the same regions.
+---@return RegionList
+function RegionList:clone() end
+
 -- Scans the process memory for values matching the data type and selector.
 ---@param dataType DataType # Data type to scan for ("u8", "i32", "f64", etc.).
 ---@param selector Selector # Comparison predicate table.
@@ -211,6 +218,10 @@ function EntryList:iter() end
 ---@param filter Filter? # Optional filter with pid, uid, name, or cmdLine fields.
 ---@return ProcList
 function Lumem:scan(filter) end
+
+-- Returns a new list with the same entries.
+---@return EntryList
+function EntryList:clone() end
 
 -- Returns the file offset of this region.
 ---@return integer

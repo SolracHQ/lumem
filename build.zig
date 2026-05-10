@@ -49,6 +49,32 @@ pub fn build(b: *std.Build) void {
     const docs_cmd = b.addRunArtifact(docs_exe);
     const docs_step = b.step("docs", "Generate Lua type stubs");
     docs_step.dependOn(&docs_cmd.step);
+    docs_cmd.step.dependOn(b.getInstallStep());
+
+    if (b.args) |args| {
+        docs_cmd.addArgs(args);
+    }
+
+    const dylib_module = b.createModule(.{
+        .root_source_file = b.path("src/dylib.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "lumem", .module = mod },
+        },
+    });
+    dylib_module.link_libc = true;
+    dylib_module.addImport("zua", zua.module("zua"));
+
+    const dylib = b.addLibrary(.{
+        .name = "lumem",
+        .linkage = .dynamic,
+        .root_module = dylib_module,
+    });
+    b.installArtifact(dylib);
+
+    const dylib_step = b.step("dylib", "Build the lumem shared library");
+    dylib_step.dependOn(b.getInstallStep());
 
     const target_exe = b.addExecutable(.{
         .name = "target",
