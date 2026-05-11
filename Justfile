@@ -12,7 +12,7 @@ target:
     zig build target
 
 docs:
-    mkdir -p stubs && zig build docs > stubs/lumem.d.lua
+    mkdir -p stubs && zig build docs > stubs/lumem.d.lua && zig build docs -- --lib > stubs/lumem.lib.d.lua
 
 dylib:
     zig build dylib && cp zig-out/lib/liblumem.so lumem.so

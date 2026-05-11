@@ -12,8 +12,19 @@ const iovec_const = std.posix.iovec_const;
 
 const zua = @import("zua");
 
+/// Errors that can occur during process memory operations.
+pub const Error = error{
+    PartialTransfer,
+    InvalidAddress,
+    InvalidArgument,
+    OutOfMemory,
+    PermissionDenied,
+    NoSuchProcess,
+};
+
 /// Reads typed values from a process's memory at the given address.
-pub fn readTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, address: usize, buffer: []T) !void {
+/// Context-free variant for use in background threads.
+pub fn read(comptime T: type, pid: std.posix.pid_t, address: usize, buffer: []T) Error!void {
     if (buffer.len == 0) return;
 
     const local = [_]iovec{.{
@@ -24,11 +35,12 @@ pub fn readTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, addr
         .base = @ptrFromInt(address),
         .len = buffer.len * @sizeOf(T),
     }};
-    try expectFullTransfer(ctx, linux.process_vm_readv(pid, &local, &remote, 0), buffer.len * @sizeOf(T));
+    try checkResult(linux.process_vm_readv(pid, &local, &remote, 0), buffer.len * @sizeOf(T));
 }
 
 /// Writes typed values into a process's memory at the given address.
-pub fn writeTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, address: usize, bytes: []const T) !void {
+/// Context-free variant for use in background threads.
+pub fn write(comptime T: type, pid: std.posix.pid_t, address: usize, bytes: []const T) Error!void {
     if (bytes.len == 0) return;
 
     const local = [_]iovec_const{.{
@@ -39,22 +51,30 @@ pub fn writeTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, add
         .base = @ptrFromInt(address),
         .len = bytes.len * @sizeOf(T),
     }};
-    try expectFullTransfer(ctx, linux.process_vm_writev(pid, &local, &remote, 0), bytes.len * @sizeOf(T));
+    try checkResult(linux.process_vm_writev(pid, &local, &remote, 0), bytes.len * @sizeOf(T));
 }
 
-fn expectFullTransfer(ctx: *zua.Context, result: usize, expected_len: usize) !void {
+/// Reads typed values with zua context for error reporting.
+pub fn readTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, address: usize, buffer: []T) !void {
+    read(T, pid, address, buffer) catch |err| return ctx.failWithFmt("{s}", .{@errorName(err)});
+}
+
+/// Writes typed values with zua context for error reporting.
+pub fn writeTyped(comptime T: type, ctx: *zua.Context, pid: std.posix.pid_t, address: usize, bytes: []const T) !void {
+    write(T, pid, address, bytes) catch |err| return ctx.failWithFmt("{s}", .{@errorName(err)});
+}
+
+fn checkResult(result: usize, expected_len: usize) Error!void {
     switch (linux.errno(result)) {
         .SUCCESS => {
-            if (result != expected_len) {
-                return ctx.failWithFmt("partial transfer: expected {d} bytes, got {d}", .{ expected_len, result });
-            }
+            if (result != expected_len) return Error.PartialTransfer;
         },
-        .FAULT => return ctx.failWithFmt("invalid address: {x}", .{result}),
-        .INVAL => return ctx.failWithFmt("invalid argument: {x}", .{result}),
-        .NOMEM => return ctx.failWithFmt("out of memory: {x}", .{result}),
-        .PERM => return ctx.failWithFmt("access denied: {x}", .{result}),
-        .SRCH => return ctx.failWithFmt("no such process: {x}", .{result}),
-        else => return ctx.failWithFmt("unexpected error: {x}", .{result}),
+        .FAULT => return Error.InvalidAddress,
+        .INVAL => return Error.InvalidArgument,
+        .NOMEM => return Error.OutOfMemory,
+        .PERM => return Error.PermissionDenied,
+        .SRCH => return Error.NoSuchProcess,
+        else => return Error.InvalidArgument,
     }
 }
 

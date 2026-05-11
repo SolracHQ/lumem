@@ -5,7 +5,7 @@
 //! key, a plain number (shorthand for { eq = x }), a plain string (shorthand
 //! for { eq = s }), or a function (shorthand for { custom = f }).
 //!
-//! For string scans the available keys are eq, ne, contains, prefix, change,
+//! For string scans the available keys are eq, ne, needle, delimited, change,
 //! and custom. Numeric selectors like gt error when used with string data.
 
 const std = @import("std");
@@ -13,6 +13,18 @@ const zua = @import("zua");
 
 const SimpleType = @import("types.zig").SimpleType;
 const DataType = @import("types.zig").DataType;
+
+const ContainsSpec = struct {
+    needle: []const u8,
+    context: ?usize = null,
+    bounds: ?[2]usize = null,
+};
+
+const DelimitedSpec = struct {
+    prefix: []const u8 = "",
+    suffix: []const u8 = "",
+    len: usize,
+};
 
 pub const Selector = union(enum) {
     pub const ZUA_META = zua.Meta.Table(Selector, .{
@@ -28,8 +40,8 @@ pub const Selector = union(enum) {
     le: zua.Decoder.Primitive,
     ne: zua.Decoder.Primitive,
     range: []zua.Decoder.Primitive,
-    contains: zua.Decoder.Primitive,
-    prefix: zua.Decoder.Primitive,
+    needle: ContainsSpec,
+    delimited: DelimitedSpec,
     change: enum {
         pub const ZUA_META = zua.Meta.strEnum(@This(), .{}, .{
             .name = "ChangeType",
@@ -49,8 +61,8 @@ pub const Selector = union(enum) {
         const prim = switch (self.*) {
             .eq => |v| v,
             .ne => |v| v,
-            .contains => |v| v,
-            .prefix => |v| v,
+            .needle => return error.NoTarget,
+            .delimited => return error.NoTarget,
             .custom => return error.NoTarget,
             .change => return error.NoTarget,
             else => return error.NotSupported,
@@ -63,18 +75,31 @@ pub const Selector = union(enum) {
     }
 
     pub fn resolveTargetLen(self: *const Selector, ctx: *zua.Context) !usize {
-        const prim = switch (self.*) {
-            .eq => |v| v,
-            .ne => |v| v,
-            .contains => |v| v,
-            .prefix => |v| v,
-            .custom => return 80,
-            .change => return 0,
-            else => return ctx.failWithFmtTyped(usize, "selector not supported for string scans", .{}),
-        };
-        return switch (prim) {
-            .string => |s| s.len,
-            .table => (try zua.Decoder.decodeValue(ctx, prim, []const u8)).len,
+        return switch (self.*) {
+            .eq => |v| blk: {
+                const len = switch (v) {
+                    .string => |s| s.len,
+                    .table => (try zua.Decoder.decodeValue(ctx, v, []const u8)).len,
+                    else => return ctx.failWithFmtTyped(usize, "expected string value", .{}),
+                };
+                break :blk len;
+            },
+            .ne => |v| blk: {
+                const len = switch (v) {
+                    .string => |s| s.len,
+                    .table => (try zua.Decoder.decodeValue(ctx, v, []const u8)).len,
+                    else => return ctx.failWithFmtTyped(usize, "expected string value", .{}),
+                };
+                break :blk len;
+            },
+            .needle => |spec| blk: {
+                const left = if (spec.bounds) |b| b[0] else spec.context orelse 0;
+                const right = if (spec.bounds) |b| b[1] else spec.context orelse 0;
+                break :blk left + spec.needle.len + right;
+            },
+            .delimited => |spec| spec.len,
+            .custom => 80,
+            .change => 0,
             else => return ctx.failWithFmtTyped(usize, "selector not supported for string scans", .{}),
         };
     }
@@ -83,8 +108,16 @@ pub const Selector = union(enum) {
         return switch (self.*) {
             .eq => |v| std.mem.eql(u8, value, try zua.Decoder.decodeValue(ctx, v, []const u8)),
             .ne => |v| !std.mem.eql(u8, value, try zua.Decoder.decodeValue(ctx, v, []const u8)),
-            .contains => |v| std.mem.find(u8, value, try zua.Decoder.decodeValue(ctx, v, []const u8)) != null,
-            .prefix => |v| std.mem.startsWith(u8, value, try zua.Decoder.decodeValue(ctx, v, []const u8)),
+            .needle => |spec| {
+                const offset = if (spec.bounds) |b| b[0] else spec.context orelse 0;
+                if (offset + spec.needle.len > value.len) return false;
+                return std.mem.eql(u8, value[offset .. offset + spec.needle.len], spec.needle);
+            },
+            .delimited => |spec| {
+                if (spec.prefix.len > 0 and !std.mem.startsWith(u8, value, spec.prefix)) return false;
+                if (spec.suffix.len > 0 and !std.mem.endsWith(u8, value, spec.suffix)) return false;
+                return true;
+            },
             .change => |change_type| switch (change_type) {
                 .none => if (prev_value) |prev| std.mem.eql(u8, value, prev) else true,
                 .any => if (prev_value) |prev| !std.mem.eql(u8, value, prev) else true,
@@ -105,7 +138,7 @@ pub const Selector = union(enum) {
             .le => |v| value <= try zua.Decoder.decodeValue(ctx, v, T),
             .ne => |v| value != try zua.Decoder.decodeValue(ctx, v, T),
             .range => |range| value >= try zua.Decoder.decodeValue(ctx, range[0], T) and value <= try zua.Decoder.decodeValue(ctx, range[1], T),
-            .contains, .prefix => return ctx.failWithFmtTyped(bool, "contains/prefix only supported for string scans", .{}),
+            .needle, .delimited => return ctx.failWithFmtTyped(bool, "needle/delimited only supported for str scans", .{}),
             .change => |change_type| switch (change_type) {
                 .increase => if (prev_value) |prev| value > prev else true,
                 .decrease => if (prev_value) |prev| value < prev else true,
@@ -123,15 +156,22 @@ pub const Selector = union(enum) {
                 if (tbl.has("custom")) {
                     return .{ .custom = (try tbl.get(ctx, "custom", zua.Function)).takeOwnership() };
                 }
-                inline for (.{ "eq", "ne", "contains", "prefix" }) |key| {
-                    if (tbl.has(key)) {
-                        const prim = try tbl.get(ctx, key, zua.Decoder.Primitive);
-                        if (prim == .table) {
-                            const bytes = try zua.Decoder.decodeValue(ctx, prim, []const u8);
-                            try tbl.set(ctx, key, bytes);
-                        }
+
+                // Shorthand: { needle = "hp", context = 10 } has 2+ keys
+                if (tbl.has("needle")) {
+                    const spec = try zua.Decoder.decodeValue(ctx, primitive, ContainsSpec);
+                    if (spec.context != null and spec.bounds != null) {
+                        return ctx.failTyped(?Selector, "context and bounds are mutually exclusive");
                     }
+                    return .{ .needle = spec };
                 }
+
+                // Shorthand: { prefix = "[", len = 16 }
+                if (tbl.has("len")) {
+                    const spec = try zua.Decoder.decodeValue(ctx, primitive, DelimitedSpec);
+                    return .{ .delimited = spec };
+                }
+
                 return null;
             },
             .integer, .float => {
@@ -146,13 +186,13 @@ pub const Selector = union(enum) {
             else => return ctx.failTyped(?Selector, "expected table for Selector"),
         }
     }
-
-    fn deinit(self: *Selector) void {
-        if (self.* == .custom) {
-            self.custom.release();
-        }
-    }
 };
+
+fn deinit(self: *Selector) void {
+    if (self.* == .custom) {
+        self.custom.release();
+    }
+}
 
 fn selectorDocs(self: *zua.Docs) !void {
     const ChangeType = comptime blk: {
@@ -209,12 +249,21 @@ fn selectorDocs(self: *zua.Docs) !void {
         .description = "Inclusive range as { lo, hi }.",
     });
     try alias.values.append(self.arena.allocator(), .{
-        .type = try self.arena.allocator().dupe(u8, "{ contains: any }"),
-        .description = "Substring match (strings only).",
+        .type = try self.arena.allocator().dupe(u8, "{ needle: string, context: number?, bounds: number[]? }"),
+        .description = "Find bytes with optional padding. context is symmetric, bounds is { left, right }.",
     });
     try alias.values.append(self.arena.allocator(), .{
-        .type = try self.arena.allocator().dupe(u8, "{ prefix: any }"),
-        .description = "Prefix match (strings only).",
+        .type = try self.arena.allocator().dupe(u8, "{ delimited: { prefix: string?, suffix: string?, len: number } }"),
+        .description = "Match a window anchored by prefix/suffix boundaries.",
+    });
+    // shorthand forms
+    try alias.values.append(self.arena.allocator(), .{
+        .type = try self.arena.allocator().dupe(u8, "{ needle: string, ... }"),
+        .description = "Shorthand for { contains = { needle, ... } }.",
+    });
+    try alias.values.append(self.arena.allocator(), .{
+        .type = try self.arena.allocator().dupe(u8, "{ prefix: string?, suffix: string?, len: number }"),
+        .description = "Shorthand for { delimited = { prefix, suffix, len } }.",
     });
     try alias.values.append(self.arena.allocator(), .{
         .type = try self.arena.allocator().dupe(u8, "{ change: ChangeType }"),

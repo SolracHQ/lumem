@@ -28,6 +28,15 @@ const methods = .{
             .{ .name = "value", .description = "Value to write to each entry's address." },
         },
     }),
+    .pin = zua.Native.new(pin, .{}, .{
+        .description = "Pins every entry in the list so their values stay at the written amount.",
+        .args = &.{
+            .{ .name = "value", .description = "Optional value to pin. Defaults to each entry's current cached value." },
+        },
+    }),
+    .unpin = zua.Native.new(unpin, .{}, .{
+        .description = "Unpins every entry in the list.",
+    }),
     .__add = zua.Native.new(m_add, .{}, .{
         .description = "Merges two entry lists into a new one.",
     }),
@@ -174,6 +183,42 @@ pub fn set(ctx: *zua.Context, self: *List, value: zua.Decoder.Primitive) !void {
     }
     if (failures > 0) {
         return ctx.failWithFmt("wrote {d} of {d} entries ({d} failed)", .{
+            self.entries.items.len - failures,
+            self.entries.items.len,
+            failures,
+        });
+    }
+}
+
+/// Pins every entry in the list so their values stay at the written amount.
+pub fn pin(ctx: *zua.Context, self: *List, value: ?zua.Decoder.Primitive) !void {
+    var failures: usize = 0;
+    for (self.entries.items) |entry| {
+        Entry.pin(ctx, entry.get(), value) catch {
+            ctx.err = null;
+            failures += 1;
+        };
+    }
+    if (failures > 0) {
+        return ctx.failWithFmt("pinned {d} of {d} entries ({d} failed)", .{
+            self.entries.items.len - failures,
+            self.entries.items.len,
+            failures,
+        });
+    }
+}
+
+/// Unpins every entry in the list.
+pub fn unpin(ctx: *zua.Context, self: *List) !void {
+    var failures: usize = 0;
+    for (self.entries.items) |entry| {
+        Entry.unpin(ctx, entry.get()) catch {
+            ctx.err = null;
+            failures += 1;
+        };
+    }
+    if (failures > 0) {
+        return ctx.failWithFmt("unpinned {d} of {d} entries ({d} failed)", .{
             self.entries.items.len - failures,
             self.entries.items.len,
             failures,

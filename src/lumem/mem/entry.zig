@@ -12,6 +12,8 @@ const DataType = @import("../mem/types.zig").DataType;
 const SimpleType = @import("../mem/types.zig").SimpleType;
 const Memory = @import("../mem/memory.zig");
 const Selector = @import("../mem/selector.zig").Selector;
+const PinWatcher = @import("../mem/pin.zig").PinWatcher;
+const PinKey = @import("../mem/pin.zig").PinKey;
 const Display = @import("../display.zig");
 
 pub const Scanner = @import("scanner.zig");
@@ -29,6 +31,24 @@ const methods = .{
     }),
     .get = zua.Native.new(get, .{}, .{
         .description = "Re-reads the entry's value from process memory and returns it.",
+    }),
+    .get_address = zua.Native.new(getAddress, .{}, .{
+        .description = "Returns the memory address of this entry.",
+    }),
+    .get_pid = zua.Native.new(getPid, .{}, .{
+        .description = "Returns the PID of the process this entry belongs to.",
+    }),
+    .get_perms = zua.Native.new(getPerms, .{}, .{
+        .description = "Returns the memory permissions at this entry's address.",
+    }),
+    .pin = zua.Native.new(pin, .{}, .{
+        .description = "Pins this entry so its value stays at the written amount.",
+        .args = &.{
+            .{ .name = "value", .description = "Optional value. Defaults to current cached value." },
+        },
+    }),
+    .unpin = zua.Native.new(unpin, .{}, .{
+        .description = "Unpins this entry. The value will no longer be kept at the pinned amount.",
     }),
 };
 
@@ -222,6 +242,45 @@ pub fn matches(self: *Entry, ctx: *zua.Context, selector: Selector) !bool {
             return result;
         },
     };
+}
+
+/// Returns the memory address of this entry.
+fn getAddress(self: *const Entry) usize {
+    return self.address;
+}
+
+/// Returns the PID of the process this entry belongs to.
+fn getPid(self: *const Entry) std.posix.pid_t {
+    return self.pid;
+}
+
+/// Returns the memory permissions at this entry's address.
+fn getPerms(self: *const Entry) Permissions {
+    return self.perms;
+}
+
+/// Pins this entry.
+pub fn pin(ctx: *zua.Context, self: *Entry, value: ?zua.Decoder.Primitive) !void {
+    if (value) |v| try set(ctx, self, v);
+
+    const watcher = try PinWatcher.getOrCreate(ctx);
+
+    const cloned: Value = switch (self.value) {
+        .str => |s| .{ .str = try ctx.heap().dupe(u8, s) },
+        else => self.value,
+    };
+
+    const key = PinKey{ .address = self.address, .data_type = std.meta.activeTag(self.value) };
+    try watcher.pin(key, .{
+        .pin = .{ .address = self.address, .pid = self.pid, .value = cloned },
+    });
+}
+
+/// Unpins this entry.
+pub fn unpin(ctx: *zua.Context, self: *Entry) !void {
+    const watcher = PinWatcher.get(ctx) orelse return ctx.fail("no entry pinned");
+    const key = PinKey{ .address = self.address, .data_type = std.meta.activeTag(self.value) };
+    try watcher.unpin(ctx, key);
 }
 
 fn m_cleanup(ctx: *zua.Context, self: *Entry) void {

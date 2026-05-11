@@ -44,6 +44,12 @@ const methods = .{
     .get_gid = zua.Native.new(getGid, .{}, .{
         .description = "Returns the group ID of the process, or nil if unavailable.",
     }),
+    .get_name = zua.Native.new(getName, .{}, .{
+        .description = "Returns the process name.",
+    }),
+    .get_pid = zua.Native.new(getPid, .{}, .{
+        .description = "Returns the process ID.",
+    }),
     .get_cmd_line = zua.Native.new(getCmdLine, .{}, .{
         .description = "Returns the full command line with null separators replaced by spaces.",
     }),
@@ -88,6 +94,16 @@ pub fn getUid(self: *const Process) ?std.posix.uid_t {
 /// Returns the group ID of the process owner, or nil when unavailable.
 pub fn getGid(self: *const Process) ?std.posix.gid_t {
     return self.gid;
+}
+
+/// Returns the process name.
+pub fn getName(self: *const Process) []const u8 {
+    return self.name;
+}
+
+/// Returns the process ID.
+pub fn getPid(self: *const Process) std.posix.pid_t {
+    return self.pid;
 }
 
 /// Returns the process command line as a single string.

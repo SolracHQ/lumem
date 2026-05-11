@@ -10,6 +10,10 @@
 
 ### Added
 
+- `Entry:pin(value?)` pins an entry so its value stays at the written amount
+- `Entry:unpin()` stops pinning an entry
+- `EntryList:pin(value?)` pins every entry in the list
+- `EntryList:unpin()` unpins every entry in the list
 - `lumem:self()` returns the current process
 - `lumem:entry({ pid, address, type, size })` creates a typed entry, table-based config with optional size for str
 - `zig build docs` generates Lua type stubs to stdout

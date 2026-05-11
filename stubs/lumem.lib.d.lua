@@ -1,4 +1,4 @@
----@meta _
+---@meta lumem
 
 ---@class Permissions
 ---@field bits integer
@@ -284,4 +284,4 @@ function ProcList:get(index) end
 ---@return integer?
 function ProcList:iter() end
 
-lumem = Lumem
+return Lumem
