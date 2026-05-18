@@ -5,8 +5,7 @@
     .minimum_zig_version = "0.16.0-dev.2984+cb7d2b056",
     .dependencies = .{
         .zua = .{
-            .url = "git+https://github.com/SolracHQ/zua#a9b64ee3ff9378d323028c0e7152f19d6e7b54cb",
-            .hash = "zua-0.13.0-DphaSWurBwB1l_DbUm-FTShU5lHCi5V_Vf1hlQe_4JAr",
+            .path = "../zua",
         },
     },
     .paths = .{

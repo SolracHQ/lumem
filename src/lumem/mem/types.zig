@@ -75,13 +75,13 @@ pub const DataType = union(enum) {
     Simple: SimpleType,
     Aggregated: AggregatedType,
 
-    pub const ZUA_META = zua.Meta.Table(DataType, .{}, .{
+    pub const ZUA_SHAPE = zua.Shape.TypedAlias(DataType, .{}, .{
         .name = "DataType",
         .description = "A scalar or family type for memory operations.",
     }).withDecode(decode).withDocs(dataTypeDocs);
 };
 
-fn decode(ctx: *zua.Context, value: zua.Decoder.Primitive) !?DataType {
+fn decode(ctx: *zua.Context, value: zua.Mapper.Primitive) !?DataType {
     return switch (value) {
         .string => |str| {
             if (fromName(str)) |dt| return dt;
@@ -98,8 +98,8 @@ fn fromName(name: []const u8) ?DataType {
     return null;
 }
 
-fn dataTypeDocs(self: *zua.Docs) !void {
-    var alias = zua.Docs.Alias{
+fn dataTypeDocs(self: *zua.Docs.Generator) !void {
+    var alias = zua.Docs.Entry.Alias{
         .name = try self.arena.allocator().dupe(u8, "DataType"),
         .description = try self.arena.allocator().dupe(u8, "A scalar or family type for memory operations."),
         .values = .empty,

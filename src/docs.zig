@@ -15,7 +15,7 @@ pub fn main(init: std.process.Init) !void {
         defer init.gpa.free(stubs);
         try writer.writeAll(stubs);
     } else {
-        var gen = zua.Docs.init(init.gpa);
+        var gen = zua.Docs.Generator.init(init.gpa);
         defer gen.deinit();
         try gen.addBinding("lumem", Lumem{});
         const stubs = try gen.generate();

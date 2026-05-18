@@ -27,23 +27,23 @@ const DelimitedSpec = struct {
 };
 
 pub const Selector = union(enum) {
-    pub const ZUA_META = zua.Meta.Table(Selector, .{
+    pub const ZUA_SHAPE = zua.Shape.TypedAlias(Selector, .{
         .__gc = deinit,
     }, .{
         .name = "Selector",
     }).withDecode(decode).withDocs(selectorDocs);
 
-    eq: zua.Decoder.Primitive,
-    gt: zua.Decoder.Primitive,
-    lt: zua.Decoder.Primitive,
-    ge: zua.Decoder.Primitive,
-    le: zua.Decoder.Primitive,
-    ne: zua.Decoder.Primitive,
-    range: []zua.Decoder.Primitive,
+    eq: zua.Mapper.Primitive,
+    gt: zua.Mapper.Primitive,
+    lt: zua.Mapper.Primitive,
+    ge: zua.Mapper.Primitive,
+    le: zua.Mapper.Primitive,
+    ne: zua.Mapper.Primitive,
+    range: []zua.Mapper.Primitive,
     needle: ContainsSpec,
     delimited: DelimitedSpec,
     change: enum {
-        pub const ZUA_META = zua.Meta.strEnum(@This(), .{}, .{
+        pub const ZUA_SHAPE = zua.Shape.StrAlias(@This(), .{}, .{
             .name = "ChangeType",
             .description = "Describes how a value changed since the last scan.",
         });
@@ -52,7 +52,7 @@ pub const Selector = union(enum) {
         none,
         any,
     },
-    custom: zua.Function,
+    custom: zua.Handlers.Any.Function,
     type: DataType,
 
     pub const StringError = error{ NoTarget, NotSupported };
@@ -79,7 +79,7 @@ pub const Selector = union(enum) {
             .eq => |v| blk: {
                 const len = switch (v) {
                     .string => |s| s.len,
-                    .table => (try zua.Decoder.decodeValue(ctx, v, []const u8)).len,
+                    .table => (try zua.Mapper.Decoder.decode(ctx, v, []const u8)).len,
                     else => return ctx.failWithFmtTyped(usize, "expected string value", .{}),
                 };
                 break :blk len;
@@ -87,7 +87,7 @@ pub const Selector = union(enum) {
             .ne => |v| blk: {
                 const len = switch (v) {
                     .string => |s| s.len,
-                    .table => (try zua.Decoder.decodeValue(ctx, v, []const u8)).len,
+                    .table => (try zua.Mapper.Decoder.decode(ctx, v, []const u8)).len,
                     else => return ctx.failWithFmtTyped(usize, "expected string value", .{}),
                 };
                 break :blk len;
@@ -106,8 +106,8 @@ pub const Selector = union(enum) {
 
     pub fn matchesString(self: *const Selector, ctx: *zua.Context, value: []const u8, prev_value: ?[]const u8) !bool {
         return switch (self.*) {
-            .eq => |v| std.mem.eql(u8, value, try zua.Decoder.decodeValue(ctx, v, []const u8)),
-            .ne => |v| !std.mem.eql(u8, value, try zua.Decoder.decodeValue(ctx, v, []const u8)),
+            .eq => |v| std.mem.eql(u8, value, try zua.Mapper.Decoder.decode(ctx, v, []const u8)),
+            .ne => |v| !std.mem.eql(u8, value, try zua.Mapper.Decoder.decode(ctx, v, []const u8)),
             .needle => |spec| {
                 const offset = if (spec.bounds) |b| b[0] else spec.context orelse 0;
                 if (offset + spec.needle.len > value.len) return false;
@@ -131,13 +131,13 @@ pub const Selector = union(enum) {
 
     pub fn matches(self: *const Selector, comptime T: type, ctx: *zua.Context, value: T, prev_value: ?T) !bool {
         return switch (self.*) {
-            .eq => |v| value == try zua.Decoder.decodeValue(ctx, v, T),
-            .gt => |v| value > try zua.Decoder.decodeValue(ctx, v, T),
-            .lt => |v| value < try zua.Decoder.decodeValue(ctx, v, T),
-            .ge => |v| value >= try zua.Decoder.decodeValue(ctx, v, T),
-            .le => |v| value <= try zua.Decoder.decodeValue(ctx, v, T),
-            .ne => |v| value != try zua.Decoder.decodeValue(ctx, v, T),
-            .range => |range| value >= try zua.Decoder.decodeValue(ctx, range[0], T) and value <= try zua.Decoder.decodeValue(ctx, range[1], T),
+            .eq => |v| value == try zua.Mapper.Decoder.decode(ctx, v, T),
+            .gt => |v| value > try zua.Mapper.Decoder.decode(ctx, v, T),
+            .lt => |v| value < try zua.Mapper.Decoder.decode(ctx, v, T),
+            .ge => |v| value >= try zua.Mapper.Decoder.decode(ctx, v, T),
+            .le => |v| value <= try zua.Mapper.Decoder.decode(ctx, v, T),
+            .ne => |v| value != try zua.Mapper.Decoder.decode(ctx, v, T),
+            .range => |range| value >= try zua.Mapper.Decoder.decode(ctx, range[0], T) and value <= try zua.Mapper.Decoder.decode(ctx, range[1], T),
             .needle, .delimited => return ctx.failWithFmtTyped(bool, "needle/delimited only supported for str scans", .{}),
             .change => |change_type| switch (change_type) {
                 .increase => if (prev_value) |prev| value > prev else true,
@@ -150,16 +150,16 @@ pub const Selector = union(enum) {
         };
     }
 
-    fn decode(ctx: *zua.Context, primitive: zua.Mapper.Decoder.Primitive) !?Selector {
+    fn decode(ctx: *zua.Context, primitive: zua.Mapper.Primitive) !?Selector {
         switch (primitive) {
             .table => |tbl| {
                 if (tbl.has("custom")) {
-                    return .{ .custom = (try tbl.get(ctx, "custom", zua.Function)).takeOwnership() };
+                    return .{ .custom = (try tbl.get(ctx, "custom", zua.Handlers.Any.Function)).takeOwnership() };
                 }
 
                 // Shorthand: { needle = "hp", context = 10 } has 2+ keys
                 if (tbl.has("needle")) {
-                    const spec = try zua.Decoder.decodeValue(ctx, primitive, ContainsSpec);
+                    const spec = try zua.Mapper.Decoder.decode(ctx, primitive, ContainsSpec);
                     if (spec.context != null and spec.bounds != null) {
                         return ctx.failTyped(?Selector, "context and bounds are mutually exclusive");
                     }
@@ -168,7 +168,7 @@ pub const Selector = union(enum) {
 
                 // Shorthand: { prefix = "[", len = 16 }
                 if (tbl.has("len")) {
-                    const spec = try zua.Decoder.decodeValue(ctx, primitive, DelimitedSpec);
+                    const spec = try zua.Mapper.Decoder.decode(ctx, primitive, DelimitedSpec);
                     return .{ .delimited = spec };
                 }
 
@@ -194,7 +194,7 @@ fn deinit(self: *Selector) void {
     }
 }
 
-fn selectorDocs(self: *zua.Docs) !void {
+fn selectorDocs(self: *zua.Docs.Generator) !void {
     const ChangeType = comptime blk: {
         for (@typeInfo(Selector).@"union".fields) |f| {
             if (std.mem.eql(u8, f.name, "change")) break :blk f.type;
@@ -203,7 +203,7 @@ fn selectorDocs(self: *zua.Docs) !void {
     };
     try self.add(ChangeType);
 
-    var alias = zua.Docs.Alias{
+    var alias = zua.Docs.Entry.Alias{
         .name = try self.arena.allocator().dupe(u8, "Selector"),
         .description = try self.arena.allocator().dupe(u8, "A comparison predicate for filtering memory scan results."),
         .values = .empty,

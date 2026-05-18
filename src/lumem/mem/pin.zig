@@ -48,7 +48,7 @@ pins: std.AutoHashMap(PinKey, void),
 
 const methods = .{ .__gc = gc };
 
-pub const ZUA_META = zua.Meta.Object(PinWatcher, methods, .{
+pub const ZUA_SHAPE = zua.Shape.Object(PinWatcher, methods, .{
     .name = "PinWatcher",
 });
 

@@ -19,28 +19,10 @@ pub const Region = @This();
 const methods = .{
     .__gc = cleanup,
     .__tostring = display,
-    .get_start = zua.Native.new(getStart, .{}, .{
-        .description = "Returns the start address of this region.",
-    }),
-    .get_end = zua.Native.new(getEnd, .{}, .{
-        .description = "Returns the end address of this region.",
-    }),
-    .get_size = zua.Native.new(getSize, .{}, .{
+    .get_size = zua.Shape.Fn(getSize, .{
         .description = "Returns the size of this region in bytes.",
     }),
-    .get_offset = zua.Native.new(getOffset, .{}, .{
-        .description = "Returns the file offset of this region.",
-    }),
-    .get_inode = zua.Native.new(getInode, .{}, .{
-        .description = "Returns the inode of the mapped file, or 0 if anonymous.",
-    }),
-    .get_perms = zua.Native.new(getPerms, .{}, .{
-        .description = "Returns the permission flags of this region.",
-    }),
-    .get_pathname = zua.Native.new(getPathname, .{}, .{
-        .description = "Returns the mapped file pathname, or empty string if anonymous.",
-    }),
-    .scan = zua.Native.new(scan, .{}, .{
+    .scan = zua.Shape.Fn(scan, .{
         .description = "Scans this region for memory values matching the data type and selector.",
         .args = &.{
             .{ .name = "dataType", .description = "Data type to scan for." },
@@ -49,67 +31,32 @@ const methods = .{
     }),
 };
 
-pub const ZUA_META = zua.Meta.Object(Region, methods, .{
+pub const ZUA_SHAPE = zua.Shape.Object(Region, methods, .{
     .name = "Region",
     .description = "A mapped memory region with address bounds, permissions, and pathname.",
 });
 
-
 /// Process ID that the region belongs to.
-pid: std.posix.pid_t,
+pid: zua.Shape.Modifier.Value(std.posix.pid_t, .{ .description = "Process ID." }),
 /// Starting address of the memory region.
-start: usize,
+start: zua.Shape.Modifier.Value(usize, .{ .description = "Start address." }),
 /// Ending address of the memory region.
-end: usize,
+end: zua.Shape.Modifier.Value(usize, .{ .description = "End address." }),
 /// Offset into the mapped file.
-offset: usize,
+offset: zua.Shape.Modifier.Value(usize, .{ .description = "File offset." }),
 /// Inode of the mapped object.
-inode: u64,
+inode: zua.Shape.Modifier.Value(u64, .{ .description = "Mapped inode, or 0 if anonymous." }),
 /// Region permission flags.
-perms: Permissions,
+perms: zua.Shape.Modifier.Value(Permissions, .{ .description = "Permission flags." }),
 /// Pathname of the mapped object, or empty when the region is anonymous.
-pathname: []const u8,
+pathname: zua.Shape.Modifier.Value([]const u8, .{ .description = "Mapped file pathname." }),
 
-
-/// Frees the region pathname buffer when Lua garbage-collects the object.
 pub fn cleanup(ctx: *zua.Context, self: *Region) void {
-    ctx.heap().free(self.pathname);
+    ctx.heap().free(self.pathname.value);
 }
 
-
-/// Returns the starting address of the region.
-fn getStart(self: *const Region) usize {
-    return self.start;
-}
-
-/// Returns the size of the region.
 fn getSize(self: *const Region) usize {
-    return self.end - self.start;
-}
-
-/// Returns the ending address of the region.
-fn getEnd(self: *const Region) usize {
-    return self.end;
-}
-
-/// Returns the offset into the mapped file.
-fn getOffset(self: *const Region) usize {
-    return self.offset;
-}
-
-/// Returns the inode of the mapped object.
-fn getInode(self: *const Region) u64 {
-    return self.inode;
-}
-
-/// Returns the region permissions.
-fn getPerms(self: *const Region) Permissions {
-    return self.perms;
-}
-
-/// Returns the pathname of the region, or an empty string for anonymous regions.
-fn getPathname(self: *const Region) []const u8 {
-    return self.pathname;
+    return self.end.value - self.start.value;
 }
 
 /// Scans the region for values of the specified type that match the selector.
@@ -125,14 +72,14 @@ fn scan(ctx: *zua.Context, self: *Region, dataType: DataType, selector: Selector
 
 /// Formats the region for Lua tostring().
 fn display(ctx: *zua.Context, self: *Region) ![]const u8 {
-    const start_str = try std.fmt.allocPrint(ctx.arena(), "0x{x}", .{self.start});
-    const end_str = try std.fmt.allocPrint(ctx.arena(), "0x{x}", .{self.end});
-    const size_str = try std.fmt.allocPrint(ctx.arena(), "{d}", .{self.end - self.start});
-    const perms_str = try Permissions.display(ctx, self.perms);
-    const path_str = if (self.pathname.len == 0)
+    const start_str = try std.fmt.allocPrint(ctx.arena(), "0x{x}", .{self.start.value});
+    const end_str = try std.fmt.allocPrint(ctx.arena(), "0x{x}", .{self.end.value});
+    const size_str = try std.fmt.allocPrint(ctx.arena(), "{d}", .{self.end.value - self.start.value});
+    const perms_str = try Permissions.display(ctx, self.perms.value);
+    const path_str = if (self.pathname.value.len == 0)
         "nil"
     else
-        try Display.quoted(ctx.arena(), self.pathname);
+        try Display.quoted(ctx.arena(), self.pathname.value);
     return Display.formatTable(ctx, &.{
         .{ .key = "start", .val = start_str },
         .{ .key = "end", .val = end_str },

@@ -13,34 +13,41 @@ local Permissions = {}
 -- Configuration for lumem:entry().
 local EntryConfig = {}
 
+-- A typed memory value at a fixed address.
 ---@class Entry
 -- A typed memory value at a fixed address.
 local Entry = {}
 
+-- A collection of Entry objects returned by memory scans.
 ---@class EntryList
----@operator len: integer
----@operator add: EntryList
+---@operator len(EntryList): integer
+---@operator add(EntryList): EntryList # Merges two entry lists into a new one.
 -- A collection of Entry objects returned by memory scans.
 local EntryList = {}
 
+-- A mapped memory region with address bounds, permissions, and pathname.
 ---@class Region
 -- A mapped memory region with address bounds, permissions, and pathname.
 local Region = {}
 
+-- A collection of Region objects returned by process:regions().
 ---@class RegionList
----@operator len: integer
+---@operator len(RegionList): integer
 -- A collection of Region objects returned by process:regions().
 local RegionList = {}
 
+-- A system process with metadata and memory scanning capabilities.
 ---@class Process
 -- A system process with metadata and memory scanning capabilities.
 local Process = {}
 
+-- A collection of Process objects returned by lumem:scan().
 ---@class ProcList
----@operator len: integer
+---@operator len(ProcList): integer
 -- A collection of Process objects returned by lumem:scan().
 local ProcList = {}
 
+-- The root scripting object for process memory inspection. Provides scan, entry, and self.
 ---@class Lumem
 -- The root scripting object for process memory inspection. Provides scan, entry, and self.
 local Lumem = {}
@@ -96,41 +103,51 @@ local Lumem = {}
 ---| string # Shorthand for { name = s }.
 ---| { pid: integer?, uid: integer?, name: string?, cmdLine: string? } # Table of filter criteria.
 
--- Creates a typed Entry at a process memory address for reading and writing.
----@param config EntryConfig # Table with pid, address, type, and optional size for str.
----@return Entry
-function Lumem:entry(config) end
+-- Returns the element at the given 1-based index.
+---@param index integer # 1-based index.
+---@return Process?
+function ProcList:get(index) end
 
 -- Returns the size of this region in bytes.
 ---@return integer
 function Region:get_size() end
 
--- Returns the mapped file pathname, or empty string if anonymous.
----@return string
-function Region:get_pathname() end
+-- Returns an iterator compatible with Lua for..in syntax.
+---@return function
+---@return ProcList
+---@return integer?
+function ProcList:iter() end
 
 -- Returns the memory permissions at this entry's address.
 ---@return Permissions
 function Entry:get_perms() end
 
--- Returns the group ID of the process, or nil if unavailable.
----@return integer?
-function Process:get_gid() end
+---@param arg1 ProcList
+function ProcList.__gc(arg1) end
+
+-- Creates a typed Entry at a process memory address for reading and writing.
+---@param config EntryConfig # Table with pid, address, type, and optional size for str.
+---@return Entry
+function Lumem:entry(config) end
 
 -- Unpins this entry. The value will no longer be kept at the pinned amount.
 function Entry:unpin() end
 
--- Returns the permission flags of this region.
----@return Permissions
-function Region:get_perms() end
+---@param arg1 Permissions
+---@return string
+function Permissions.__tostring(arg1) end
 
 -- Keeps only entries matching a selector, removing the rest.
 ---@param selector Selector # Comparison predicate table.
 function EntryList:filter(selector) end
 
--- Returns the end address of this region.
----@return integer
-function Region:get_end() end
+---@param arg1 Process
+function Process.__gc(arg1) end
+
+---@param arg1 ProcList
+---@param arg2 integer
+---@return Process?
+function ProcList.__index(arg1, arg2) end
 
 -- Keeps only processes matching the given criteria, removing the rest.
 ---@param filter Filter # Filter with pid, uid, name, or cmdLine fields.
@@ -146,17 +163,19 @@ function RegionList:scan(dataType, selector) end
 ---@return ProcList
 function ProcList:clone() end
 
--- Returns the inode of the mapped file, or 0 if anonymous.
----@return integer
-function Region:get_inode() end
-
 -- Pins this entry so its value stays at the written amount.
 ---@param value any? # Optional value. Defaults to current cached value.
 function Entry:pin(value) end
 
--- Returns the full command line with null separators replaced by spaces.
----@return string
-function Process:get_cmd_line() end
+---@param arg1 EntryList
+---@param arg2 integer
+---@return Entry?
+function EntryList.__index(arg1, arg2) end
+
+---@param arg1 RegionList
+---@param arg2 integer
+---@return Region?
+function RegionList.__index(arg1, arg2) end
 
 -- Returns the element at the given 1-based index.
 ---@param index integer # 1-based index.
@@ -182,14 +201,16 @@ function EntryList:set(value) end
 ---@return EntryList
 function ProcList:scan(dataType, selector, filter) end
 
--- Returns the process ID.
----@return integer
-function Process:get_pid() end
-
 -- Returns the element at the given 1-based index.
 ---@param index integer # 1-based index.
 ---@return Region?
 function RegionList:get(index) end
+
+---@param arg1 Region
+function Region.__gc(arg1) end
+
+---@param arg1 Entry
+function Entry.__gc(arg1) end
 
 -- Writes a new value to this entry's address in the target process.
 ---@param value any # Value to write.
@@ -197,7 +218,7 @@ function Entry:set(value) end
 
 -- Returns an iterator compatible with Lua for..in syntax.
 ---@return function
----@return userdata
+---@return RegionList
 ---@return integer?
 function RegionList:iter() end
 
@@ -222,28 +243,35 @@ function Process:scan(dataType, selector, filter) end
 ---@return EntryList
 function Region:scan(dataType, selector) end
 
+---@param arg1 Region
+---@return string
+function Region.__tostring(arg1) end
+
+---@param arg1 EntryList
+function EntryList.__gc(arg1) end
+
 -- Returns a Process for the current process. No root needed, useful when loaded via require("lumem").
 ---@return Process
 function Lumem:self() end
 
--- Returns the parent process ID, or nil if unavailable.
----@return integer?
-function Process:get_parent_pid() end
+---@param arg1 RegionList
+---@return string
+function RegionList.__tostring(arg1) end
 
--- Returns the user ID that owns the process, or nil if unavailable.
----@return integer?
-function Process:get_uid() end
-
--- Returns the start address of this region.
----@return integer
-function Region:get_start() end
+---@param arg1 ProcList
+---@return string
+function ProcList.__tostring(arg1) end
 
 -- Unpins every entry in the list.
 function EntryList:unpin() end
 
+---@param arg1 Process
+---@return string
+function Process.__tostring(arg1) end
+
 -- Returns an iterator compatible with Lua for..in syntax.
 ---@return function
----@return userdata
+---@return EntryList
 ---@return integer?
 function EntryList:iter() end
 
@@ -252,13 +280,13 @@ function EntryList:iter() end
 ---@return ProcList
 function Lumem:scan(filter) end
 
+---@param arg1 Lumem
+---@return string
+function Lumem.__tostring(arg1) end
+
 -- Returns a new list with the same entries.
 ---@return EntryList
 function EntryList:clone() end
-
--- Returns the file offset of this region.
----@return integer
-function Region:get_offset() end
 
 -- Pins every entry in the list so their values stay at the written amount.
 ---@param value any? # Optional value to pin. Defaults to each entry's current cached value.
@@ -269,19 +297,15 @@ function EntryList:pin(value) end
 ---@return RegionList
 function Process:regions(filter) end
 
--- Returns the process name.
+---@param arg1 EntryList
 ---@return string
-function Process:get_name() end
+function EntryList.__tostring(arg1) end
 
--- Returns the element at the given 1-based index.
----@param index integer # 1-based index.
----@return Process?
-function ProcList:get(index) end
+---@param arg1 Entry
+---@return string
+function Entry.__tostring(arg1) end
 
--- Returns an iterator compatible with Lua for..in syntax.
----@return function
----@return userdata
----@return integer?
-function ProcList:iter() end
+---@param arg1 RegionList
+function RegionList.__gc(arg1) end
 
 return Lumem

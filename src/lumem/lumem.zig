@@ -5,7 +5,7 @@
 
 const std = @import("std");
 const zua = @import("zua");
-const Meta = zua.Meta;
+const Shape = zua.Shape;
 const Process = @import("process/process.zig");
 const DataType = @import("mem/types.zig").DataType;
 const Entry = @import("mem/entry.zig").Entry;
@@ -16,16 +16,16 @@ const Lumem = @This();
 
 const methods = .{
     .__tostring = m_display,
-    .self = zua.Native.new(m_self, .{}, .{
+    .self = zua.Shape.Fn(m_self, .{
         .description = "Returns a Process for the current process. No root needed, useful when loaded via require(\"lumem\").",
     }),
-    .scan = zua.Native.new(m_scan, .{}, .{
+    .scan = zua.Shape.Fn(m_scan, .{
         .description = "Scans live processes and returns a ProcList matching the optional filter.",
         .args = &.{
             .{ .name = "filter", .description = "Optional filter with pid, uid, name, or cmdLine fields." },
         },
     }),
-    .entry = zua.Native.new(m_entry, .{}, .{
+    .entry = zua.Shape.Fn(m_entry, .{
         .description = "Creates a typed Entry at a process memory address for reading and writing.",
         .args = &.{
             .{ .name = "config", .description = "Table with pid, address, type, and optional size for str." },
@@ -33,7 +33,7 @@ const methods = .{
     }),
 };
 
-pub const ZUA_META = Meta.Object(Lumem, methods, .{
+pub const ZUA_SHAPE = Shape.Object(Lumem, methods, .{
     .name = "Lumem",
     .description = "The root scripting object for process memory inspection. Provides scan, entry, and self.",
 });
@@ -99,7 +99,7 @@ const EntryConfig = struct {
     type: DataType,
     size: ?usize = null,
 
-    pub const ZUA_META = zua.Meta.Table(EntryConfig, .{}, .{
+    pub const ZUA_SHAPE = zua.Shape.Table(EntryConfig, .{}, .{
         .name = "EntryConfig",
         .description = "Configuration for lumem:entry().",
         .field_descriptions = .{

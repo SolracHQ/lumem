@@ -19,47 +19,29 @@ const Display = @import("../display.zig");
 
 pub const Process = @This();
 
-/// Parent process ID, if available.
-parentPid: ?std.posix.pid_t,
+/// Parent process ID, or nil.
+parentPid: zua.Shape.Modifier.Value(?std.posix.pid_t, .{ .description = "Parent process ID, or nil." }),
 /// Process ID.
-pid: std.posix.pid_t,
-/// User ID that owns the process, if available.
-uid: ?std.posix.uid_t,
-/// Group ID that owns the process, if available.
-gid: ?std.posix.gid_t,
+pid: zua.Shape.Modifier.Value(std.posix.pid_t, .{ .description = "Process ID." }),
+/// User ID that owns the process, or nil.
+uid: zua.Shape.Modifier.Value(?std.posix.uid_t, .{ .description = "User ID that owns the process, or nil." }),
+/// Group ID of the process, or nil.
+gid: zua.Shape.Modifier.Value(?std.posix.gid_t, .{ .description = "Group ID of the process, or nil." }),
 /// Process name.
-name: []const u8,
+name: zua.Shape.Modifier.Value([]const u8, .{ .description = "Process name." }),
 /// Full process command line.
-cmdLine: []const u8,
+cmdLine: zua.Shape.Modifier.Value([]const u8, .{ .description = "Full process command line." }),
 
 const methods = .{
     .__gc = cleanup,
     .__tostring = display,
-    .get_parent_pid = zua.Native.new(getParentPid, .{}, .{
-        .description = "Returns the parent process ID, or nil if unavailable.",
-    }),
-    .get_uid = zua.Native.new(getUid, .{}, .{
-        .description = "Returns the user ID that owns the process, or nil if unavailable.",
-    }),
-    .get_gid = zua.Native.new(getGid, .{}, .{
-        .description = "Returns the group ID of the process, or nil if unavailable.",
-    }),
-    .get_name = zua.Native.new(getName, .{}, .{
-        .description = "Returns the process name.",
-    }),
-    .get_pid = zua.Native.new(getPid, .{}, .{
-        .description = "Returns the process ID.",
-    }),
-    .get_cmd_line = zua.Native.new(getCmdLine, .{}, .{
-        .description = "Returns the full command line with null separators replaced by spaces.",
-    }),
-    .regions = zua.Native.new(regions, .{}, .{
+    .regions = zua.Shape.Fn(regions, .{
         .description = "Returns the memory regions for this process, optionally filtered by permissions.",
         .args = &.{
             .{ .name = "filter", .description = "Optional permission filter string (\"rwxp\") or table of names." },
         },
     }),
-    .scan = zua.Native.new(scan, .{}, .{
+    .scan = zua.Shape.Fn(scan, .{
         .description = "Scans the process memory for values matching the data type and selector.",
         .args = &.{
             .{ .name = "dataType", .description = "Data type to scan for (\"u8\", \"i32\", \"f64\", etc.)." },
@@ -69,58 +51,26 @@ const methods = .{
     }),
 };
 
-pub const ZUA_META = zua.Meta.Object(Process, methods, .{
+pub const ZUA_SHAPE = zua.Shape.Object(Process, methods, .{
     .name = "Process",
     .description = "A system process with metadata and memory scanning capabilities.",
 });
 
-
-/// Frees the process metadata buffer when Lua garbage-collects the object.
 pub fn cleanup(ctx: *zua.Context, self: *Process) void {
-    ctx.heap().free(self.name);
-    ctx.heap().free(self.cmdLine);
-}
-
-/// Returns the process parent PID, or nil when unavailable.
-pub fn getParentPid(self: *const Process) ?std.posix.pid_t {
-    return self.parentPid;
-}
-
-/// Returns the user ID of the process owner, or nil when unavailable.
-pub fn getUid(self: *const Process) ?std.posix.uid_t {
-    return self.uid;
-}
-
-/// Returns the group ID of the process owner, or nil when unavailable.
-pub fn getGid(self: *const Process) ?std.posix.gid_t {
-    return self.gid;
-}
-
-/// Returns the process name.
-pub fn getName(self: *const Process) []const u8 {
-    return self.name;
-}
-
-/// Returns the process ID.
-pub fn getPid(self: *const Process) std.posix.pid_t {
-    return self.pid;
-}
-
-/// Returns the process command line as a single string.
-pub fn getCmdLine(self: *const Process) []const u8 {
-    return self.cmdLine;
+    ctx.heap().free(self.name.value);
+    ctx.heap().free(self.cmdLine.value);
 }
 
 /// Returns the memory regions for this process, optionally filtered by permissions.
 pub fn regions(ctx: *zua.Context, self: *const Process, filter: ?Region.Permissions) !RegionList {
-    const _regions = try RegionScanner.scan(ctx, self.pid, filter orelse try Region.Permissions.fromString(ctx, "rw--"));
+    const _regions = try RegionScanner.scan(ctx, self.pid.value, filter orelse try Region.Permissions.fromString(ctx, "rw--"));
     return try RegionList.init(ctx, _regions);
 }
 
 /// Scans the process memory for values matching the data type and selector.
 pub fn scan(ctx: *zua.Context, self: *const Process, dataType: DataType, selector: Selector, filter: ?Region.Permissions) !EntryList {
     const region_filter = filter orelse try Region.Permissions.fromString(ctx, "rw--");
-    const _regions = try RegionScanner.scan(ctx, self.pid, region_filter);
+    const _regions = try RegionScanner.scan(ctx, self.pid.value, region_filter);
     defer for (_regions) |*region| {
         Region.cleanup(ctx, region);
     };
@@ -138,18 +88,18 @@ pub fn scan(ctx: *zua.Context, self: *const Process, dataType: DataType, selecto
 
 /// Formats the process for Lua tostring().
 fn display(ctx: *zua.Context, self: *Process) ![]const u8 {
-    const pid_str = try std.fmt.allocPrint(ctx.arena(), "{d}", .{self.pid});
-    const name_str = try Display.quoted(ctx.arena(), self.name);
-    const cmd_str = try Display.quoted(ctx.arena(), Display.truncate(self.cmdLine, 80));
-    const ppid_str = if (self.parentPid) |pp|
+    const pid_str = try std.fmt.allocPrint(ctx.arena(), "{d}", .{self.pid.value});
+    const name_str = try Display.quoted(ctx.arena(), self.name.value);
+    const cmd_str = try Display.quoted(ctx.arena(), Display.truncate(self.cmdLine.value, 80));
+    const ppid_str = if (self.parentPid.value) |pp|
         try std.fmt.allocPrint(ctx.arena(), "{d}", .{pp})
     else
         "nil";
-    const uid_str = if (self.uid) |u|
+    const uid_str = if (self.uid.value) |u|
         try std.fmt.allocPrint(ctx.arena(), "{d}", .{u})
     else
         "nil";
-    const gid_str = if (self.gid) |g|
+    const gid_str = if (self.gid.value) |g|
         try std.fmt.allocPrint(ctx.arena(), "{d}", .{g})
     else
         "nil";
@@ -197,12 +147,12 @@ pub fn scanAll(ctx: *zua.Context, filter: *const Filter) ![]Process {
         const cmdLine = readCmdLine(ctx, dir) catch continue;
         const status = parseStatus(ctx, dir) catch continue;
         var process = Process{
-            .parentPid = status.parentPid,
-            .pid = pid,
-            .uid = status.uid,
-            .gid = status.gid,
-            .name = name,
-            .cmdLine = cmdLine,
+            .parentPid = .new(status.parentPid),
+            .pid = .new(pid),
+            .uid = .new(status.uid),
+            .gid = .new(status.gid),
+            .name = .new(name),
+            .cmdLine = .new(cmdLine),
         };
 
         if (filter.matches(&process)) {
@@ -228,12 +178,12 @@ pub fn getSelf(ctx: *zua.Context) !Process {
     const cmdLine = try readCmdLine(ctx, self_dir);
     const status = try parseStatus(ctx, self_dir);
     return Process{
-        .parentPid = status.parentPid,
-        .pid = pid,
-        .uid = status.uid,
-        .gid = status.gid,
-        .name = name,
-        .cmdLine = cmdLine,
+        .parentPid = .new(status.parentPid),
+        .pid = .new(pid),
+        .uid = .new(status.uid),
+        .gid = .new(status.gid),
+        .name = .new(name),
+        .cmdLine = .new(cmdLine),
     };
 }
 

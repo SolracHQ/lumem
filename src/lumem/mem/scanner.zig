@@ -26,8 +26,8 @@ pub fn mapError(ctx: *zua.Context, comptime T: type, err: anyerror) !T {
 }
 
 pub fn scanRegion(ctx: *zua.Context, info: *const Region, dataType: DataType, selector: Selector) ![]Entry {
-    if (!info.perms.has(.read)) {
-        try ctx.failWithFmt("region at {x} is not readable", .{info.start});
+    if (!info.perms.value.has(.read)) {
+        try ctx.failWithFmt("region at {x} is not readable", .{info.start.value});
     }
 
     var result = std.ArrayList(Entry).empty;
@@ -62,18 +62,18 @@ pub fn scanRegion(ctx: *zua.Context, info: *const Region, dataType: DataType, se
 fn lookFor(comptime T: type, ctx: *zua.Context, info: *const Region, selector: Selector) ![]Entry {
     var out = std.ArrayList(Entry).empty;
     var buffer: [1024 * 64 / @sizeOf(T)]T = undefined;
-    var cursor = alignTo(info.start, T);
-    while (cursor < alignTo(info.end, T)) {
-        const toRead = @min(buffer.len, info.end - cursor);
+    var cursor = alignTo(info.start.value, T);
+    while (cursor < alignTo(info.end.value, T)) {
+        const toRead = @min(buffer.len, info.end.value - cursor);
         const slice = buffer[0 .. toRead / @sizeOf(T)];
-        Memory.readTyped(T, ctx, info.pid, cursor, slice) catch |err| return mapError(ctx, []Entry, err);
+        Memory.readTyped(T, ctx, info.pid.value, cursor, slice) catch |err| return mapError(ctx, []Entry, err);
         for (slice, 0..) |value, idx| {
             if (try selector.matches(T, ctx, value, null)) {
                 try out.append(ctx.arena(), Entry{
                     .address = cursor + idx * @sizeOf(T),
                     .value = .from(T, value),
-                    .perms = info.perms,
-                    .pid = info.pid,
+                    .perms = info.perms.value,
+                    .pid = info.pid.value,
                 });
             }
         }
@@ -92,11 +92,11 @@ fn lookForString(ctx: *zua.Context, info: *const Region, selector: Selector) ![]
     var buf: [1024 * 64]u8 = undefined;
     var overlap: [80]u8 = undefined;
     var overlap_len: usize = 0;
-    var cursor = info.start;
+    var cursor = info.start.value;
 
-    while (cursor < info.end) {
-        const to_read = @min(buf.len, info.end - cursor);
-        Memory.readTyped(u8, ctx, info.pid, cursor, buf[0..to_read]) catch |err| return mapError(ctx, []Entry, err);
+    while (cursor < info.end.value) {
+        const to_read = @min(buf.len, info.end.value - cursor);
+        Memory.readTyped(u8, ctx, info.pid.value, cursor, buf[0..to_read]) catch |err| return mapError(ctx, []Entry, err);
 
         var window: []const u8 = undefined;
         if (overlap_len > 0) {
@@ -117,8 +117,8 @@ fn lookForString(ctx: *zua.Context, info: *const Region, selector: Selector) ![]
                 try out.append(ctx.arena(), Entry{
                     .address = addr,
                     .value = Entry.Value{ .str = owned },
-                    .perms = info.perms,
-                    .pid = info.pid,
+                    .perms = info.perms.value,
+                    .pid = info.pid.value,
                 });
             }
         }

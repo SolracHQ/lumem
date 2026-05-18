@@ -18,7 +18,7 @@ name: ?[]const u8 = null,
 /// Filter by substring match within the command line.
 cmdLine: ?[]const u8 = null,
 
-pub const ZUA_META = zua.Meta.Table(Filter, .{}, .{
+pub const ZUA_SHAPE = zua.Shape.Table(Filter, .{}, .{
     .name = "Filter",
 })
     .withDecode(decode)
@@ -27,29 +27,29 @@ pub const ZUA_META = zua.Meta.Table(Filter, .{}, .{
 /// Returns true when the process matches all non-null filter fields.
 pub fn matches(self: *const Filter, proc: *const Process) bool {
     if (self.pid) |pid| {
-        if (proc.pid != pid) return false;
+        if (proc.pid.value != pid) return false;
     }
     if (self.uid) |uid| {
-        if (proc.uid != uid) return false;
+        if (proc.uid.value != uid) return false;
     }
     if (self.name) |name| {
-        if (std.mem.find(u8, proc.name, name) == null) return false;
+        if (std.mem.find(u8, proc.name.value, name) == null) return false;
     }
     if (self.cmdLine) |cmdLine| {
-        if (std.mem.find(u8, proc.cmdLine, cmdLine) == null) return false;
+        if (std.mem.find(u8, proc.cmdLine.value, cmdLine) == null) return false;
     }
     return true;
 }
 
-fn decode(_: *zua.Context, prim: zua.Mapper.Decoder.Primitive) !?Filter {
+fn decode(_: *zua.Context, prim: zua.Mapper.Primitive) !?Filter {
     return switch (prim) {
         .string => |s| Filter{ .name = s },
         else => null,
     };
 }
 
-fn filterDocs(self: *zua.Docs) !void {
-    var alias = zua.Docs.Alias{
+fn filterDocs(self: *zua.Docs.Generator) !void {
+    var alias = zua.Docs.Entry.Alias{
         .name = try self.arena.allocator().dupe(u8, "Filter"),
         .description = try self.arena.allocator().dupe(u8, "Process filter criteria. Accepts a table with optional fields, or a string (shorthand for { name = s })."),
         .values = .empty,
@@ -59,7 +59,7 @@ fn filterDocs(self: *zua.Docs) !void {
         .description = "Shorthand for { name = s }.",
     });
     try alias.values.append(self.arena.allocator(), .{
-        .type = try zua.Docs.structToAliasShape(self, Filter),
+        .type = try zua.Docs.Internals.Helpers.structToAliasShape(self, Filter),
         .description = "Table of filter criteria.",
     });
     try self.aliases.append(self.arena.allocator(), alias);

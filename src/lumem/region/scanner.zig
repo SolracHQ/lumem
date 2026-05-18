@@ -29,7 +29,7 @@ pub fn scan(ctx: *zua.Context, pid: std.posix.pid_t, filter: Region.Permissions)
 
     var regions = std.ArrayList(Region).empty;
     errdefer {
-        for (regions.items) |region| ctx.arena().free(region.pathname);
+        for (regions.items) |region| ctx.arena().free(region.pathname.value);
         regions.deinit(ctx.arena());
     }
 
@@ -39,10 +39,10 @@ pub fn scan(ctx: *zua.Context, pid: std.posix.pid_t, filter: Region.Permissions)
         if (trimmed.len == 0) continue;
 
         const region = try parseLine(ctx.heap(), trimmed, pid);
-        if (region.perms.hasAll(filter)) {
+        if (region.perms.value.hasAll(filter)) {
             try regions.append(ctx.arena(), region);
         } else {
-            ctx.heap().free(region.pathname);
+            ctx.heap().free(region.pathname.value);
         }
     }
 
@@ -71,13 +71,13 @@ fn parseLine(allocator: std.mem.Allocator, line: []const u8, pid: std.posix.pid_
     const pathname = try allocator.dupe(u8, pathname_field);
 
     return Region{
-        .pid = pid,
-        .start = start,
-        .end = end,
-        .offset = offset,
-        .inode = inode,
-        .perms = perms,
-        .pathname = pathname,
+        .pid = .new(pid),
+        .start = .new(start),
+        .end = .new(end),
+        .offset = .new(offset),
+        .inode = .new(inode),
+        .perms = .new(perms),
+        .pathname = .new(pathname),
     };
 }
 

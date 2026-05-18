@@ -20,16 +20,16 @@ pub const List = @This();
 const methods = .{
     .__gc = deinit,
     .__tostring = display,
-    .filter = zua.Native.new(filter, .{}, .{
+    .filter = zua.Shape.Fn(filter, .{
         .description = "Keeps only processes matching the given criteria, removing the rest.",
         .args = &.{
             .{ .name = "filter", .description = "Filter with pid, uid, name, or cmdLine fields." },
         },
     }),
-    .clone = zua.Native.new(clone, .{}, .{
+    .clone = zua.Shape.Fn(clone, .{
         .description = "Returns a new list with the same processes.",
     }),
-    .scan = zua.Native.new(scan, .{}, .{
+    .scan = zua.Shape.Fn(scan, .{
         .description = "Scans all processes in the list for matching memory values.",
         .args = &.{
             .{ .name = "dataType", .description = "Data type to scan for." },
@@ -39,24 +39,24 @@ const methods = .{
     }),
 };
 
-pub const ZUA_META = zua.Meta.List(List, getElements, methods, .{
+pub const ZUA_SHAPE = zua.Shape.List(List, getElements, methods, .{
     .name = "ProcList",
     .description = "A collection of Process objects returned by lumem:scan().",
 });
 
-processes: std.ArrayList(zua.Object(Process)),
+processes: std.ArrayList(zua.Handlers.Typed.Object(Process)),
 
-fn getElements(self: *List) []zua.Object(Process) {
+fn getElements(self: *List) []zua.Handlers.Typed.Object(Process) {
     return self.processes.items;
 }
 
 /// Constructs a new ProcList from a slice of process values.
 pub fn init(ctx: *zua.Context, elements: []Process) !List {
     var list = List{
-        .processes = std.ArrayList(zua.Object(Process)).empty,
+        .processes = std.ArrayList(zua.Handlers.Typed.Object(Process)).empty,
     };
     for (elements) |proc| {
-        try list.processes.append(ctx.heap(), zua.Object(Process).create(ctx.state, proc).takeOwnership());
+        try list.processes.append(ctx.heap(), zua.Handlers.Typed.Object(Process).create(ctx.state, proc).takeOwnership());
     }
     return list;
 }
@@ -78,7 +78,7 @@ fn display(ctx: *zua.Context, self: *List) ![]const u8 {
     for (self.processes.items, 0..) |proc, idx| {
         if (idx >= max_display) break;
         const proc_ref = proc.get();
-        const row = try std.fmt.bufPrint(&buf, "{d:5} {d:8} {s}\n", .{ idx + 1, @as(u64, @abs(proc_ref.pid)), proc_ref.name });
+        const row = try std.fmt.bufPrint(&buf, "{d:5} {d:8} {s}\n", .{ idx + 1, @as(u64, @abs(proc_ref.pid.value)), proc_ref.name.value });
         try out.appendSlice(ctx.arena(), row);
     }
     if (self.processes.items.len > max_display) {
@@ -104,7 +104,7 @@ pub fn filter(ctx: *zua.Context, self: *List, _filter: ProcessFilter) !void {
 
 /// Returns a new list with copies of the same processes.
 pub fn clone(ctx: *zua.Context, self: *List) !List {
-    var out = std.ArrayList(zua.Object(Process)).empty;
+    var out = std.ArrayList(zua.Handlers.Typed.Object(Process)).empty;
     errdefer out.deinit(ctx.heap());
 
     for (self.processes.items) |proc| {
@@ -124,7 +124,7 @@ pub fn scan(ctx: *zua.Context, self: *List, dataType: DataType, selector: Select
     errdefer entries.deinit(ctx.arena());
 
     for (self.processes.items) |proc| {
-        const regions = try RegionScanner.scan(ctx, proc.get().pid, region_filter);
+        const regions = try RegionScanner.scan(ctx, proc.get().pid.value, region_filter);
         defer for (regions) |*region| {
             Region.cleanup(ctx, region);
         };

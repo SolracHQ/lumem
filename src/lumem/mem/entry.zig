@@ -23,36 +23,36 @@ pub const Entry = @This();
 const methods = .{
     .__gc = m_cleanup,
     .__tostring = m_display,
-    .set = zua.Native.new(set, .{}, .{
+    .set = zua.Shape.Fn(set, .{
         .description = "Writes a new value to this entry's address in the target process.",
         .args = &.{
             .{ .name = "value", .description = "Value to write." },
         },
     }),
-    .get = zua.Native.new(get, .{}, .{
+    .get = zua.Shape.Fn(get, .{
         .description = "Re-reads the entry's value from process memory and returns it.",
     }),
-    .get_address = zua.Native.new(getAddress, .{}, .{
+    .get_address = zua.Shape.Fn(getAddress, .{
         .description = "Returns the memory address of this entry.",
     }),
-    .get_pid = zua.Native.new(getPid, .{}, .{
+    .get_pid = zua.Shape.Fn(getPid, .{
         .description = "Returns the PID of the process this entry belongs to.",
     }),
-    .get_perms = zua.Native.new(getPerms, .{}, .{
+    .get_perms = zua.Shape.Fn(getPerms, .{
         .description = "Returns the memory permissions at this entry's address.",
     }),
-    .pin = zua.Native.new(pin, .{}, .{
+    .pin = zua.Shape.Fn(pin, .{
         .description = "Pins this entry so its value stays at the written amount.",
         .args = &.{
             .{ .name = "value", .description = "Optional value. Defaults to current cached value." },
         },
     }),
-    .unpin = zua.Native.new(unpin, .{}, .{
+    .unpin = zua.Shape.Fn(unpin, .{
         .description = "Unpins this entry. The value will no longer be kept at the pinned amount.",
     }),
 };
 
-pub const ZUA_META = zua.Meta.Object(Entry, methods, .{
+pub const ZUA_SHAPE = zua.Shape.Object(Entry, methods, .{
     .name = "Entry",
     .description = "A typed memory value at a fixed address.",
 });
@@ -121,7 +121,7 @@ value: Value,
 
 
 /// Re-reads the entry's value from process memory and returns it.
-fn get(ctx: *zua.Context, self: *Entry) !zua.Decoder.Primitive {
+fn get(ctx: *zua.Context, self: *Entry) !zua.Mapper.Primitive {
     return switch (self.value) {
         .u8 => {
             const value = try readValue(u8, ctx, self);
@@ -188,7 +188,7 @@ fn get(ctx: *zua.Context, self: *Entry) !zua.Decoder.Primitive {
 }
 
 /// Writes a new value to the entry's address in the target process.
-pub fn set(ctx: *zua.Context, self: *Entry, value: zua.Decoder.Primitive) !void {
+pub fn set(ctx: *zua.Context, self: *Entry, value: zua.Mapper.Primitive) !void {
     switch (self.value) {
         .u8 => try setTyped(u8, ctx, self, value),
         .u16 => try setTyped(u16, ctx, self, value),
@@ -201,7 +201,7 @@ pub fn set(ctx: *zua.Context, self: *Entry, value: zua.Decoder.Primitive) !void 
         .f32 => try setTyped(f32, ctx, self, value),
         .f64 => try setTyped(f64, ctx, self, value),
         .str => {
-            const val = try zua.Decoder.decodeValue(ctx, value, []const u8);
+            const val = try zua.Mapper.Decoder.decode(ctx, value, []const u8);
             if (val.len > self.value.str.len) {
                 return ctx.failWithFmt("string too long (max {d} bytes)", .{self.value.str.len});
             }
@@ -260,7 +260,7 @@ fn getPerms(self: *const Entry) Permissions {
 }
 
 /// Pins this entry.
-pub fn pin(ctx: *zua.Context, self: *Entry, value: ?zua.Decoder.Primitive) !void {
+pub fn pin(ctx: *zua.Context, self: *Entry, value: ?zua.Mapper.Primitive) !void {
     if (value) |v| try set(ctx, self, v);
 
     const watcher = try PinWatcher.getOrCreate(ctx);
@@ -314,8 +314,8 @@ pub fn readStringValue(ctx: *zua.Context, self: *const Entry) ![]u8 {
     return buf;
 }
 
-fn setTyped(comptime T: type, ctx: *zua.Context, self: *Entry, value: zua.Decoder.Primitive) !void {
-    const val: [1]T = .{try zua.Decoder.decodeValue(ctx, value, T)};
+fn setTyped(comptime T: type, ctx: *zua.Context, self: *Entry, value: zua.Mapper.Primitive) !void {
+    const val: [1]T = .{try zua.Mapper.Decoder.decode(ctx, value, T)};
     if (!self.perms.has(.write)) {
         return ctx.failWithFmt("entry at {x} is not writable", .{self.address});
     }

@@ -13,57 +13,57 @@ pub const List = @This();
 const methods = .{
     .__gc = deinit,
     .__tostring = display,
-    .filter = zua.Native.new(filter, .{}, .{
+    .filter = zua.Shape.Fn(filter, .{
         .description = "Keeps only entries matching a selector, removing the rest.",
         .args = &.{
             .{ .name = "selector", .description = "Comparison predicate table." },
         },
     }),
-    .clone = zua.Native.new(clone, .{}, .{
+    .clone = zua.Shape.Fn(clone, .{
         .description = "Returns a new list with the same entries.",
     }),
-    .set = zua.Native.new(set, .{}, .{
+    .set = zua.Shape.Fn(set, .{
         .description = "Writes a value to every entry in the list.",
         .args = &.{
             .{ .name = "value", .description = "Value to write to each entry's address." },
         },
     }),
-    .pin = zua.Native.new(pin, .{}, .{
+    .pin = zua.Shape.Fn(pin, .{
         .description = "Pins every entry in the list so their values stay at the written amount.",
         .args = &.{
             .{ .name = "value", .description = "Optional value to pin. Defaults to each entry's current cached value." },
         },
     }),
-    .unpin = zua.Native.new(unpin, .{}, .{
+    .unpin = zua.Shape.Fn(unpin, .{
         .description = "Unpins every entry in the list.",
     }),
-    .__add = zua.Native.new(m_add, .{}, .{
+    .__add = zua.Shape.Fn(m_add, .{
         .description = "Merges two entry lists into a new one.",
     }),
 };
 
-pub const ZUA_META = zua.Meta.List(List, getElements, methods, .{
+pub const ZUA_SHAPE = zua.Shape.List(List, getElements, methods, .{
     .name = "EntryList",
     .description = "A collection of Entry objects returned by memory scans.",
 });
 
-entries: std.ArrayList(zua.Object(Entry)),
+entries: std.ArrayList(zua.Handlers.Typed.Object(Entry)),
 
-fn getElements(self: *List) []zua.Object(Entry) {
+fn getElements(self: *List) []zua.Handlers.Typed.Object(Entry) {
     return self.entries.items;
 }
 
 /// Constructs a new EntryList from a slice of Entry values.
 pub fn init(ctx: *zua.Context, elements: []Entry) !List {
     var list = List{
-        .entries = std.ArrayList(zua.Object(Entry)).empty,
+        .entries = std.ArrayList(zua.Handlers.Typed.Object(Entry)).empty,
     };
     errdefer {
         for (list.entries.items) |e| e.release();
         list.entries.deinit(ctx.heap());
     }
     for (elements) |entry| {
-        try list.entries.append(ctx.heap(), zua.Object(Entry).create(ctx.state, entry).takeOwnership());
+        try list.entries.append(ctx.heap(), zua.Handlers.Typed.Object(Entry).create(ctx.state, entry).takeOwnership());
     }
     return list;
 }
@@ -160,7 +160,7 @@ pub fn filter(ctx: *zua.Context, self: *List, selector: Selector) !void {
 
 /// Returns a new list with copies of the same entries.
 pub fn clone(ctx: *zua.Context, self: *List) !List {
-    var out = std.ArrayList(zua.Object(Entry)).empty;
+    var out = std.ArrayList(zua.Handlers.Typed.Object(Entry)).empty;
     errdefer out.deinit(ctx.heap());
 
     for (self.entries.items) |entry| {
@@ -173,7 +173,7 @@ pub fn clone(ctx: *zua.Context, self: *List) !List {
 }
 
 /// Writes a value to every entry in the list. Continues on errors, reports a summary.
-pub fn set(ctx: *zua.Context, self: *List, value: zua.Decoder.Primitive) !void {
+pub fn set(ctx: *zua.Context, self: *List, value: zua.Mapper.Primitive) !void {
     var failures: usize = 0;
     for (self.entries.items) |entry| {
         Entry.set(ctx, entry.get(), value) catch {
@@ -191,7 +191,7 @@ pub fn set(ctx: *zua.Context, self: *List, value: zua.Decoder.Primitive) !void {
 }
 
 /// Pins every entry in the list so their values stay at the written amount.
-pub fn pin(ctx: *zua.Context, self: *List, value: ?zua.Decoder.Primitive) !void {
+pub fn pin(ctx: *zua.Context, self: *List, value: ?zua.Mapper.Primitive) !void {
     var failures: usize = 0;
     for (self.entries.items) |entry| {
         Entry.pin(ctx, entry.get(), value) catch {
@@ -227,7 +227,7 @@ pub fn unpin(ctx: *zua.Context, self: *List) !void {
 }
 
 fn m_add(ctx: *zua.Context, self: *List, other: *List) !List {
-    var out = std.ArrayList(zua.Object(Entry)).empty;
+    var out = std.ArrayList(zua.Handlers.Typed.Object(Entry)).empty;
     errdefer out.deinit(ctx.heap());
 
     for (self.entries.items) |entry| {

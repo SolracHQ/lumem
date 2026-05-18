@@ -22,5 +22,5 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
-    try repl.run(state);
+    repl.run(state);
 }

@@ -1,6 +1,6 @@
 const std = @import("std");
 const zua = @import("zua");
-const lua = zua.lua;
+const lua = zua.Bindings.lua;
 const Lumem = @import("lumem").Lumem;
 
 export fn luaopen_lumem(L: *lua.State) c_int {
@@ -10,6 +10,6 @@ export fn luaopen_lumem(L: *lua.State) c_int {
     const state = zua.State.libState(L, std.heap.c_allocator, io, "lumem") catch return 0;
     var ctx = zua.Context.init(state);
     defer ctx.deinit();
-    zua.Mapper.Encoder.pushValue(&ctx, Lumem{}) catch return 0;
+    zua.Mapper.Encoder.push(&ctx, Lumem{}) catch return 0;
     return 1;
 }

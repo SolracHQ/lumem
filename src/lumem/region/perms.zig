@@ -5,7 +5,7 @@
 
 const std = @import("std");
 const zua = @import("zua");
-const Decoder = zua.Mapper.Decoder;
+const Mapper = zua.Mapper;
 
 /// A bitfield representing region permissions.
 ///
@@ -24,7 +24,7 @@ pub const Permission = enum(u8) {
 
 bits: u8,
 
-pub const ZUA_META = zua.Meta.Table(Permissions, .{
+pub const ZUA_SHAPE = zua.Shape.Table(Permissions, .{
     .__tostring = display,
 }, .{
     .name = "Permissions",
@@ -59,7 +59,7 @@ pub fn fromString(ctx: *zua.Context, s: []const u8) !Permissions {
 }
 
 
-fn decode(ctx: *zua.Context, value: Decoder.Primitive) !?Permissions {
+fn decode(ctx: *zua.Context, value: Mapper.Primitive) !?Permissions {
     return switch (value) {
         .integer => |n| blk: {
             const bits = std.math.cast(u8, n) orelse
@@ -90,7 +90,7 @@ fn parseString(ctx: *zua.Context, s: []const u8) !Permissions {
     return .{ .bits = bits };
 }
 
-fn parseTable(ctx: *zua.Context, table: zua.Table) !Permissions {
+fn parseTable(ctx: *zua.Context, table: zua.Handlers.Any.Table) !Permissions {
     var perms: Permissions = .{ .bits = 0 };
     var index: usize = 1;
     var seen = false;

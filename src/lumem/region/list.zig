@@ -16,10 +16,10 @@ pub const List = @This();
 const methods = .{
     .__gc = deinit,
     .__tostring = display,
-    .clone = zua.Native.new(clone, .{}, .{
+    .clone = zua.Shape.Fn(clone, .{
         .description = "Returns a new list with the same regions.",
     }),
-    .scan = zua.Native.new(scan, .{}, .{
+    .scan = zua.Shape.Fn(scan, .{
         .description = "Scans all regions in the list for matching memory values.",
         .args = &.{
             .{ .name = "dataType", .description = "Data type to scan for." },
@@ -28,28 +28,28 @@ const methods = .{
     }),
 };
 
-pub const ZUA_META = zua.Meta.List(List, getElements, methods, .{
+pub const ZUA_SHAPE = zua.Shape.List(List, getElements, methods, .{
     .name = "RegionList",
     .description = "A collection of Region objects returned by process:regions().",
 });
 
-regions: std.ArrayList(zua.Object(Region)),
+regions: std.ArrayList(zua.Handlers.Typed.Object(Region)),
 
-fn getElements(self: *List) []zua.Object(Region) {
+fn getElements(self: *List) []zua.Handlers.Typed.Object(Region) {
     return self.regions.items;
 }
 
 /// Constructs a new RegionList from a slice of Region values.
 pub fn init(ctx: *zua.Context, elements: []Region) !List {
     var list = List{
-        .regions = std.ArrayList(zua.Object(Region)).empty,
+        .regions = std.ArrayList(zua.Handlers.Typed.Object(Region)).empty,
     };
     errdefer {
         for (list.regions.items) |r| r.release();
         list.regions.deinit(ctx.heap());
     }
     for (elements) |region| {
-        try list.regions.append(ctx.heap(), zua.Object(Region).create(ctx.state, region).takeOwnership());
+        try list.regions.append(ctx.heap(), zua.Handlers.Typed.Object(Region).create(ctx.state, region).takeOwnership());
     }
     return list;
 }
@@ -71,8 +71,8 @@ fn display(ctx: *zua.Context, self: *List) ![]const u8 {
     for (self.regions.items, 0..) |region, idx| {
         if (idx >= max_display) break;
         const region_ref = region.get();
-        const perms_str = try Permissions.display(ctx, region_ref.perms);
-        const row = try std.fmt.bufPrint(&buf, "{d:5} 0x{x:0>16}-0x{x:0>16}  {s}  {s}\n", .{ idx + 1, region_ref.start, region_ref.end, perms_str, region_ref.pathname });
+        const perms_str = try Permissions.display(ctx, region_ref.perms.value);
+        const row = try std.fmt.bufPrint(&buf, "{d:5} 0x{x:0>16}-0x{x:0>16}  {s}  {s}\n", .{ idx + 1, region_ref.start.value, region_ref.end.value, perms_str, region_ref.pathname.value });
         try out.appendSlice(ctx.arena(), row);
     }
     if (self.regions.items.len > max_display) {
@@ -97,7 +97,7 @@ pub fn scan(ctx: *zua.Context, self: *List, dataType: DataType, selector: Select
 
 /// Returns a new list with copies of the same regions.
 pub fn clone(ctx: *zua.Context, self: *List) !List {
-    var out = std.ArrayList(zua.Object(Region)).empty;
+    var out = std.ArrayList(zua.Handlers.Typed.Object(Region)).empty;
     errdefer out.deinit(ctx.heap());
 
     for (self.regions.items) |region| {
